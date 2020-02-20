@@ -1,26 +1,28 @@
 import React from 'react';
-import logo from './logo.svg';
-import './App.css';
+import './App.scss';
+import { webgl } from './webgl/webgl';
 
-const App = () => {
-  return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.tsx</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
-  );
+export class App extends React.PureComponent {
+	ele = React.createRef<HTMLCanvasElement>();
+
+	componentDidMount() {
+		const canvas = this.ele.current!;
+		const gl = canvas.getContext('webgl');
+		if (!gl) {
+			alert('Unable to initialize WebGL. Your browser or machine may not support it.');
+			return;
+		}
+		webgl(gl);
+	}
+
+	render() {
+		return (
+			<div >
+				<canvas ref={this.ele}   >
+				</canvas>
+			</div>
+		);
+	}
 }
 
 export default App;

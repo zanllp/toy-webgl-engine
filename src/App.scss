@@ -1,0 +1,11 @@
+ /* 移除边界 */
+ body {
+    border: 0;
+    background-color: white;
+  }
+  /* 设置欢度大小为视域大小 */
+  canvas {
+    width: 100vw;
+    height: 100vh;
+    display: block;
+  }
