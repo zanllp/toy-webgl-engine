@@ -1,5 +1,5 @@
 import { mat3, mat4, vec3 } from 'gl-matrix';
-import { createMesh, createWriteBufFn, degToRad, modifyWindow, mulM3V3, mulV3M3, printMat, resize, createProgramInfo, writeMultiBuf } from './tool';
+import { createMesh, createWriteBufFn, degToRad, modifyWindow, mulM3V3, mulV3M3, printMat, resize, createProgramInfo, writeMultiBuf, createSetValueFn } from './tool';
 import { ui } from './ui';
 modifyWindow({ mat3, mulM3V3, printMat, mulV3M3, vec3 });
 
@@ -126,7 +126,8 @@ export const start = (gl: WebGLRenderingContext, ani = false) => {
     resize(gl.canvas);
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     const info = createInfo(gl);
-    const setV = createSetValueFn(gl, info);
+    const setV = createSetValueFn(gl, info, render, state);
+    const { value } = state;
     if (ani) {
         let lt = 0;
         let lRotate = value.rotateY;
@@ -139,6 +140,26 @@ export const start = (gl: WebGLRenderingContext, ani = false) => {
         requestAnimationFrame(anifn);
     } else {
         const step = 1;
+        document.addEventListener('wheel', x => setV(_ => ({ scale: _.scale * (1 + ((x.deltaY / 100))) })));
+        document.addEventListener('mousedown', x => {
+            if (x.buttons === 1) {
+                state.clicked = true;
+            }
+        });
+        document.addEventListener('mouseup', x => {
+            if (x.buttons === 0) {
+                state.clicked = false;
+            }
+        });
+        document.addEventListener('mousemove', x => {
+            if (state.clicked) {
+                const { movementX, movementY } = x;
+                setV(y => ({
+                    rotateCameraX: y.rotateCameraX - movementY / 5,
+                    rotateCameraY: y.rotateCameraY - movementX / 5,
+                }));
+            }
+        });
         document.addEventListener('keydown', x => {
             const step = 3;
             switch (x.code) {
@@ -188,36 +209,19 @@ export const start = (gl: WebGLRenderingContext, ani = false) => {
 
 
 };
-let value = {
-    z: 350, y: 150, x: 0,
-    rotateCameraY: 0, rotateCameraX: 0,
-    rotateY: 0, rotateX: 0,
-    shininess: 30
-};
-type valueT = typeof value;
-const createSetValueFn = (gl: WebGLRenderingContext, programInfo: infoT) =>
-    (s: (Partial<valueT> | ((s: valueT) => Partial<valueT>) | { action: 'incr' | 'decr', key: keyof valueT, value: number })) => {
-        if (typeof s === 'object') {
-            if ('action' in s) {
-                switch (s.action) {
-                    case 'incr':
-                        value[s.key] += s.value;
-                        break;
-                    case 'decr':
-                        value[s.key] -= s.value;
-                        break;
-                }
-            } else {
-                value = { ...value, ...s };
-            }
-        } else {
-            value = { ...value, ...s(value) };
-        }
-        render(gl, programInfo, value);
-        return value;
-    };
 
-const render = (gl: WebGLRenderingContext, info: infoT, v = value) => {
+const state = {
+    value: {
+        z: 350, y: 150, x: 0,
+        rotateCameraY: 0, rotateCameraX: 0, scale: 1,
+        rotateY: 0, rotateX: 0,
+        shininess: 50,
+    },
+    clicked: false
+};
+
+
+const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.CULL_FACE);
     gl.clearColor(0, 0, 0, 0);
@@ -238,12 +242,22 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = value) => {
     mat4.rotateX(camera, camera, degToRad(v.rotateCameraX));
     mat4.rotateY(camera, camera, degToRad(v.rotateCameraY));
     mat4.translate(camera, camera, viewPos.map(_ => -_));
+    mat4.scale(camera, camera, [v.scale, v.scale, v.scale]);
+    var cameraPosition = [
+        camera[12],
+        camera[13],
+        camera[14],
+      ];
+    //const lookat = mat4.lookAt(mat4.create(), cameraPosition, [0, 0, 0], [0, 1, 0]);
+    
+    //mat4.mul(camera, camera, lookat);
     gl.uniformMatrix4fv(info.ele.u_view, false, camera);
     gl.uniform3fv(info.ele.u_viewWorldPos, viewPos);
 
     const scaleFactor = 1;
 
     const model = mat4.create();
+    
     mat4.translate(model, model, [50, 50, 50].map(_ => _ / scaleFactor));
     mat4.rotateX(model, model, degToRad(v.rotateX));
     mat4.rotateY(model, model, degToRad(v.rotateY));

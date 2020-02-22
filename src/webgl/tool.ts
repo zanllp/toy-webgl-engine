@@ -153,3 +153,30 @@ export const createProgramInfo = <A, U>({ gl, location, source }: programInfoPar
 	return programInfoFromKey({ gl, program, attribute: location.attribute, uniform: location.uniform });
 };
 
+export const createSetValueFn = <T, V, U extends { value: V }>(gl: WebGLRenderingContext, programInfo: T, render: (gl: WebGLRenderingContext, info: T, v?: V) => any, state: U) =>
+	(s: (Partial<V> | ((s: V) => Partial<V>) | { action: 'incr' | 'decr', key: keyof V, value: number })) => {
+		let { value } = state;
+		if (typeof s === 'object') {
+			if ('action' in s) {
+				const v = value as any;
+				if (typeof v[s.key] !== 'number') {
+					throw new Error(`key:${s.key} 不能作用于value:${value},type:${typeof v[s.key]}`);
+				}
+				switch (s.action) {
+					case 'incr':
+						v[s.key] += s.value;
+						break;
+					case 'decr':
+						v[s.key] -= s.value;
+						break;
+				}
+			} else {
+				value = { ...value, ...s };
+			}
+		} else {
+			value = { ...value, ...s(value) };
+		}
+		state.value = value;
+		render(gl, programInfo, value);
+		return value;
+	};
