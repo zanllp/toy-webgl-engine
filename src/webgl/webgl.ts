@@ -64,7 +64,6 @@ void main() {
 const vScene = `
 uniform mat4 u_proj;
 uniform mat4 u_view;
-uniform mat4 u_model;
 attribute vec3 a_pos;
 void main() {
     vec4 pos = vec4(a_pos,1);
@@ -111,7 +110,6 @@ const createInfo = (gl: WebGLRenderingContext) => ({
             uniform: {
                 u_proj: mat4.create(),
                 u_view: mat4.create(),
-                u_model: mat4.create(),
             }
         },
         source: {
@@ -237,7 +235,7 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
     const zNear = 1;
     const zFar = 1000;
     mat4.perspective(projection, fieldOfView, aspect, zNear, zFar); // 投影
-    ele.u_proj.set(projection);
+    ele.u_proj = projection;
     // 视锥在zNear 的距离时是 2 个单位高和 2 * aspect 个单位宽。视图的范围是 -1 到 +1 
     // 矩阵乘法的执行顺序是倒的
     const camera = mat4.create();
@@ -251,8 +249,8 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
         camera[13],
         camera[14],
     ];
-    ele.u_view.set(camera);
-    ele.u_viewWorldPos.value = array2Vec3(viewPos);
+    ele.u_view = camera;
+    ele.u_viewWorldPos = array2Vec3(viewPos);
     const scaleFactor = 1;
 
     const model = mat4.create();
@@ -261,8 +259,8 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
     mat4.rotateX(model, model, degToRad(v.rotateX));
     mat4.rotateY(model, model, degToRad(v.rotateY));
     mat4.translate(model, model, [-50, -50, -50].map(_ => _ / scaleFactor));
-    ele.u_model.set(model);
-    ele.u_shininess.set(v.shininess);
+    ele.u_model = model;
+    ele.u_shininess = v.shininess;
     //
     const posData = dataF.map(_ => _ / scaleFactor);
     const norData = normalData;
@@ -270,25 +268,25 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
         {
             data: posData,
             size: 3,
-            location: ele.a_pos.loc
+            location: ele.loc.a_pos
         }, {
             data: colorData,
             size: 3,
-            location: ele.a_color.loc,
+            location: ele.loc.a_color,
         }, {
             data: norData,
             size: 3,
-            location: ele.a_normal.loc,
+            location: ele.loc.a_normal,
         }
     ]);
     gl.drawArrays(gl.TRIANGLES, 0, posData.length / 3);
 
     gl.useProgram(scene.program);
-    scene.u_proj.value = projection;
-    scene.u_view.value = camera;
-    createWriteBufFn(gl)([70, 30, 120], 3, scene.a_pos.loc);
+    scene.u_proj = projection;
+    scene.u_view = camera;
+    createWriteBufFn(gl)([70, 30, 120], 3, scene.loc.a_pos);
     gl.drawArrays(gl.POINTS, 0, 1);
-    createMesh({ gl, posLoc: scene.a_pos.loc, range: 3000, num: 20, is3d: true });
+    createMesh({ gl, posLoc: scene.loc.a_pos, range: 3000, num: 20, is3d: true });
 };
 export const webgl = (gl: WebGLRenderingContext) => {
     start(gl);

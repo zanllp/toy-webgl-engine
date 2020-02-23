@@ -134,8 +134,8 @@ export function createMesh({ gl, posLoc, range = 1500, num = 10, is3d = false }:
 	return dst.length / size;
 }
 type typeAll = mat3 | mat4 | vec4 | vec3 | vec2 | number;
-type constraintAll = { [x: string]: typeAll };
 type constraintNull = { [x: string]: '' };
+type constraintAll = { [x: string]: typeAll | '' };
 const createSetUniformFn = (gl: WebGLRenderingContext, loc: WebGLUniformLocation | null) => {
 	return (_: typeAll, trans = false) => {
 		if (typeof _ === 'number') {
@@ -167,40 +167,30 @@ const createSetUniformFn = (gl: WebGLRenderingContext, loc: WebGLUniformLocation
 	};
 };
 
-type unifType<U> = {
-	[p in keyof U]: {
-		set: (_: U[p], trans?: boolean) => void;
-		loc: WebGLUniformLocation | null;
-		value: U[p]
-	}
-};
+type unifType<U> = { [p in keyof U]: U[p] };
 const programInfoFromKey = <A extends constraintNull, U extends constraintAll>({ gl, program, attribute, uniform }:
 	{ gl: WebGLRenderingContext; program: WebGLProgram; attribute: A; uniform: U; }) => {
-	const attr = {} as { [p in keyof A]: { loc: number } };
+	const loc = {} as { [p in keyof A]: number } & { [p in keyof U]: WebGLUniformLocation | null };
 	gl.useProgram(program);
-	Object.keys(attribute).forEach(x => {
-		(attr as any)[x] = {};
-		const e = attr[x];
-		e.loc = gl.getAttribLocation(program, x);
-	});
-	const unif = {} as unifType<U>;
+	Object.keys(attribute).forEach(x => (loc as any)[x] = gl.getAttribLocation(program, x));
+	const res = {} as { program: WebGLProgram; loc: typeof loc; } & unifType<U>; // 如果定义在一个即将展开的对象上,setget生效
 	Object.keys(uniform).forEach(x => {
-		(unif as any)[x] = {};
-		const e = unif[x];
-		e.loc = gl.getUniformLocation(program, x);
-		e.set = createSetUniformFn(gl, e.loc);
-		e.value = {} as any;
-		Object.defineProperty(e, 'value', {
+		const uloc = gl.getUniformLocation(program, x);
+		const eset = createSetUniformFn(gl, uloc);
+		Object.defineProperty(res, x, {
 			set(_: any) {
-				e.set(_);
+				eset(_);
 			},
 			get() {
-				return gl.getUniform(program, e.loc as any);
+				return gl.getUniform(program, uloc as any);
 			}
 		});
-		e.set(uniform[x] as any);
+		(res as any)[x] = uniform[x]; // 初始化设定值
+		(loc as any)[x] = uloc;
 	});
-	return { program, ...attr, ...unif };
+	res.program = program;
+	res.loc = loc;
+	return res;
 };
 export type programInfoT = ReturnType<typeof programInfoFromKey>;
 
@@ -252,3 +242,4 @@ export const createSetValueFn = <T, V, U extends { value: V }>(gl: WebGLRenderin
 	};
 
 export const array2Vec3 = (_: Array<number>) => vec3.fromValues(_[0], _[1], _[2]);
+
