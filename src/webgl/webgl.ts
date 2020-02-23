@@ -1,7 +1,7 @@
-import { mat3, mat4, vec3 } from 'gl-matrix';
-import { createMesh, createWriteBufFn, degToRad, modifyWindow, mulM3V3, mulV3M3, printMat, resize, createProgramInfo, writeMultiBuf, createSetValueFn } from './tool';
+import { mat2, mat3, mat4, vec3, vec4 } from 'gl-matrix';
+import { array2Vec3, createMesh, createProgramInfo, createSetValueFn, createWriteBufFn, degToRad, modifyWindow, mulM3V3, mulV3M3, printMat, resize, writeMultiBuf } from './tool';
 import { ui } from './ui';
-modifyWindow({ mat3, mulM3V3, printMat, mulV3M3, vec3 });
+modifyWindow({ mat3, mulM3V3, printMat, mulV3M3, vec3, vec4, mat2, });
 
 
 const vEle = `
@@ -88,13 +88,13 @@ const createInfo = (gl: WebGLRenderingContext) => ({
                 a_normal: '',
             },
             uniform: {
-                u_proj: '',
-                u_view: '',
-                u_model: '',
-                u_lightDirectional: '',
-                u_lightPoint: '',
-                u_viewWorldPos: '',
-                u_shininess: '',
+                u_proj: mat4.create(),
+                u_view: mat4.create(),
+                u_model: mat4.create(),
+                u_lightDirectional: vec3.fromValues(1, 1, 1),
+                u_lightPoint: vec3.fromValues(70, 30, 180),
+                u_viewWorldPos: vec3.create(),
+                u_shininess: 50,
             }
         },
         source: {
@@ -109,9 +109,9 @@ const createInfo = (gl: WebGLRenderingContext) => ({
                 a_pos: ''
             },
             uniform: {
-                u_proj: '',
-                u_view: '',
-                u_model: '',
+                u_proj: mat4.create(),
+                u_view: mat4.create(),
+                u_model: mat4.create(),
             }
         },
         source: {
@@ -140,7 +140,10 @@ export const start = (gl: WebGLRenderingContext, ani = false) => {
         requestAnimationFrame(anifn);
     } else {
         const step = 1;
-        document.addEventListener('wheel', x => setV(_ => ({ scale: _.scale * (1 + ((x.deltaY / 100))) })));
+        document.addEventListener('wheel', x => {
+            const direction = x.deltaY / Math.abs(x.deltaY);
+            return setV(_ => ({ scale: _.scale * (1 + (direction * .1)) }));
+        });
         document.addEventListener('mousedown', x => {
             if (x.buttons === 1) {
                 state.clicked = true;
@@ -155,7 +158,7 @@ export const start = (gl: WebGLRenderingContext, ani = false) => {
             if (state.clicked) {
                 const { movementX, movementY } = x;
                 setV(y => ({
-                    rotateCameraX: y.rotateCameraX - movementY / 5,
+                    rotateCameraX: y.rotateCameraX - movementY / 20,
                     rotateCameraY: y.rotateCameraY - movementX / 5,
                 }));
             }
@@ -226,15 +229,15 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
     gl.enable(gl.CULL_FACE);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-    gl.useProgram(info.ele.program);
+    const { ele, scene } = info;
+    gl.useProgram(ele.program);
     const projection = mat4.create();
     const fieldOfView = degToRad(75);
     const aspect = gl.canvas.width / gl.canvas.height;
     const zNear = 1;
     const zFar = 1000;
     mat4.perspective(projection, fieldOfView, aspect, zNear, zFar); // 投影
-    gl.uniformMatrix4fv(info.ele.u_proj, false, projection);
+    ele.u_proj.set(projection);
     // 视锥在zNear 的距离时是 2 个单位高和 2 * aspect 个单位宽。视图的范围是 -1 到 +1 
     // 矩阵乘法的执行顺序是倒的
     const camera = mat4.create();
@@ -247,25 +250,19 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
         camera[12],
         camera[13],
         camera[14],
-      ];
-    //const lookat = mat4.lookAt(mat4.create(), cameraPosition, [0, 0, 0], [0, 1, 0]);
-    
-    //mat4.mul(camera, camera, lookat);
-    gl.uniformMatrix4fv(info.ele.u_view, false, camera);
-    gl.uniform3fv(info.ele.u_viewWorldPos, viewPos);
-
+    ];
+    ele.u_view.set(camera);
+    ele.u_viewWorldPos.value = array2Vec3(viewPos);
     const scaleFactor = 1;
 
     const model = mat4.create();
-    
+
     mat4.translate(model, model, [50, 50, 50].map(_ => _ / scaleFactor));
     mat4.rotateX(model, model, degToRad(v.rotateX));
     mat4.rotateY(model, model, degToRad(v.rotateY));
     mat4.translate(model, model, [-50, -50, -50].map(_ => _ / scaleFactor));
-    gl.uniformMatrix4fv(info.ele.u_model, false, model);
-    gl.uniform3fv(info.ele.u_lightDirectional, [1, 1, 1]);
-    gl.uniform3fv(info.ele.u_lightPoint, [70, 30, 180]);
-    gl.uniform1f(info.ele.u_shininess, v.shininess);
+    ele.u_model.set(model);
+    ele.u_shininess.set(v.shininess);
     //
     const posData = dataF.map(_ => _ / scaleFactor);
     const norData = normalData;
@@ -273,25 +270,25 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
         {
             data: posData,
             size: 3,
-            location: info.ele.a_pos
+            location: ele.a_pos.loc
         }, {
             data: colorData,
             size: 3,
-            location: info.ele.a_color,
+            location: ele.a_color.loc,
         }, {
             data: norData,
             size: 3,
-            location: info.ele.a_normal,
+            location: ele.a_normal.loc,
         }
     ]);
     gl.drawArrays(gl.TRIANGLES, 0, posData.length / 3);
 
-    gl.useProgram(info.scene.program);
-    gl.uniformMatrix4fv(info.scene.u_proj, false, projection);
-    gl.uniformMatrix4fv(info.scene.u_view, false, camera);
-    createWriteBufFn(gl)([70, 30, 120], 3, info.scene.a_pos);
+    gl.useProgram(scene.program);
+    scene.u_proj.value = projection;
+    scene.u_view.value = camera;
+    createWriteBufFn(gl)([70, 30, 120], 3, scene.a_pos.loc);
     gl.drawArrays(gl.POINTS, 0, 1);
-    createMesh({ gl, posLoc: info.scene.a_pos, range: 3000, num: 20, is3d: true });
+    createMesh({ gl, posLoc: scene.a_pos.loc, range: 3000, num: 20, is3d: true });
 };
 export const webgl = (gl: WebGLRenderingContext) => {
     start(gl);

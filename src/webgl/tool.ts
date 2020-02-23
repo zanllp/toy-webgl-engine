@@ -1,4 +1,4 @@
-import { mat3 } from 'gl-matrix';
+import { mat3, mat4, vec2, vec3, vec4 } from 'gl-matrix';
 
 export function resize(canvas: any) {
 	// 获取浏览器中画布的显示尺寸
@@ -133,22 +133,92 @@ export function createMesh({ gl, posLoc, range = 1500, num = 10, is3d = false }:
 	gl.drawArrays(gl.LINES, 0, dst.length / size);
 	return dst.length / size;
 }
-const programInfoFromKey = <A, U>({ gl, program, attribute, uniform }: { gl: WebGLRenderingContext; program: WebGLProgram; attribute: A; uniform: U; }) => {
-	const attr = {} as { [p in keyof A]: number };
-	Object.keys(attribute).forEach(x => (attr as any)[x] = gl.getAttribLocation(program, x));
-	const unif = {} as { [p in keyof U]: WebGLUniformLocation | null };
-	Object.keys(uniform).forEach(x => (unif as any)[x] = gl.getUniformLocation(program, x));
+type typeAll = mat3 | mat4 | vec4 | vec3 | vec2 | number;
+type constraintAll = { [x: string]: typeAll };
+type constraintNull = { [x: string]: '' };
+const createSetUniformFn = (gl: WebGLRenderingContext, loc: WebGLUniformLocation | null) => {
+	return (_: typeAll, trans = false) => {
+		if (typeof _ === 'number') {
+			gl.uniform1f(loc, _);
+		} else {
+			// 没有mat2因为不能和vec4区分
+			// 不使用instanceof是因为mat,vec的类型有类，但实际是模块而是构造器
+			switch (_.length) {
+				case 2:
+					gl.uniform2f(loc, _[0], _[1]);
+					break;
+				case 3:
+					gl.uniform3f(loc, _[0], _[1], _[2]);
+					break;
+				case 4:
+					gl.uniform4f(loc, _[0], _[1], _[2], _[3]);
+					break;
+				case 9:
+					gl.uniformMatrix3fv(loc, trans, _);
+					break;
+				case 16:
+					gl.uniformMatrix4fv(loc, trans, _);
+					break;
+				default:
+					throw new Error('未定义类型');
+			}
+		}
+
+	};
+};
+
+type unifType<U> = {
+	[p in keyof U]: {
+		set: (_: U[p], trans?: boolean) => void;
+		loc: WebGLUniformLocation | null;
+		value: U[p]
+	}
+};
+const programInfoFromKey = <A extends constraintNull, U extends constraintAll>({ gl, program, attribute, uniform }:
+	{ gl: WebGLRenderingContext; program: WebGLProgram; attribute: A; uniform: U; }) => {
+	const attr = {} as { [p in keyof A]: { loc: number } };
+	gl.useProgram(program);
+	Object.keys(attribute).forEach(x => {
+		(attr as any)[x] = {};
+		const e = attr[x];
+		e.loc = gl.getAttribLocation(program, x);
+	});
+	const unif = {} as unifType<U>;
+	Object.keys(uniform).forEach(x => {
+		(unif as any)[x] = {};
+		const e = unif[x];
+		e.loc = gl.getUniformLocation(program, x);
+		e.set = createSetUniformFn(gl, e.loc);
+		e.value = {} as any;
+		Object.defineProperty(e, 'value', {
+			set(_: any) {
+				e.set(_);
+			},
+			get() {
+				return gl.getUniform(program, e.loc as any);
+			}
+		});
+		e.set(uniform[x] as any);
+	});
 	return { program, ...attr, ...unif };
 };
-export type programInfoT<A, U> = {
-	program: WebGLProgram;
-} & { [p in keyof A]: number; } & { [p in keyof U]: WebGLUniformLocation | null; };
+export type programInfoT = ReturnType<typeof programInfoFromKey>;
 
 
-export type programInfoParamsT<A, U> = { gl: WebGLRenderingContext; location: { attribute: A; uniform: U; }, source: { vertex: string; fragment: string; } };
+export type programInfoParamsT<A, U> = {
+	gl: WebGLRenderingContext;
+	location: {
+		attribute: A;
+		uniform: U;
+	},
+	source: {
+		vertex: string;
+		fragment: string;
+	}
+};
 
 
-export const createProgramInfo = <A, U>({ gl, location, source }: programInfoParamsT<A, U>) => {
+export const createProgramInfo = <A extends constraintNull, U extends constraintAll>({ gl, location, source }: programInfoParamsT<A, U>) => {
 	const program = createProgram(gl, source.vertex, source.fragment);
 	return programInfoFromKey({ gl, program, attribute: location.attribute, uniform: location.uniform });
 };
@@ -180,3 +250,5 @@ export const createSetValueFn = <T, V, U extends { value: V }>(gl: WebGLRenderin
 		render(gl, programInfo, value);
 		return value;
 	};
+
+export const array2Vec3 = (_: Array<number>) => vec3.fromValues(_[0], _[1], _[2]);
