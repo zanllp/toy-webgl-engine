@@ -134,8 +134,8 @@ export function createMesh({ gl, posLoc, range = 1500, num = 10, is3d = false }:
 	return dst.length / size;
 }
 type typeAll = mat3 | mat4 | vec4 | vec3 | vec2 | number;
-type constraintNull = { [x: string]: '' };
-type constraintAll = { [x: string]: typeAll | '' };
+type constraintNull = { [x: string]: number };
+type constraintAll = { [x: string]: typeAll | null };
 const createSetUniformFn = (gl: WebGLRenderingContext, loc: WebGLUniformLocation | null) => {
 	return (_: typeAll, trans = false) => {
 		if (typeof _ === 'number') {
@@ -170,10 +170,23 @@ const createSetUniformFn = (gl: WebGLRenderingContext, loc: WebGLUniformLocation
 type unifType<U> = { [p in keyof U]: U[p] };
 const programInfoFromKey = <A extends constraintNull, U extends constraintAll>({ gl, program, attribute, uniform }:
 	{ gl: WebGLRenderingContext; program: WebGLProgram; attribute: A; uniform: U; }) => {
-	const loc = {} as { [p in keyof A]: number } & { [p in keyof U]: WebGLUniformLocation | null };
 	gl.useProgram(program);
-	Object.keys(attribute).forEach(x => (loc as any)[x] = gl.getAttribLocation(program, x));
-	const res = {} as { program: WebGLProgram; loc: typeof loc; } & unifType<U>; // 如果定义在一个即将展开的对象上,setget生效
+	const loc = {} as { [p in keyof A]: number } & { [p in keyof U]: WebGLUniformLocation | null };
+	const res = {} as { program: WebGLProgram; loc: typeof loc; } & unifType<U> & { [p in keyof A]: Array<number> }; // 如果定义在一个即将展开的对象上,setget生效
+	Object.keys(attribute).forEach(x => {
+		(loc as any)[x] = gl.getAttribLocation(program, x);
+		const size = attribute[x];
+		let data = new Array<number>();
+		Object.defineProperty(res, x, {
+			set(_: any) {
+				data = _;
+				writeBufferData(gl, data, size, loc[x]);
+			},
+			get() {
+				return data;
+			}
+		});
+	});
 	Object.keys(uniform).forEach(x => {
 		const uloc = gl.getUniformLocation(program, x);
 		const eset = createSetUniformFn(gl, uloc);

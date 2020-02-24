@@ -1,5 +1,5 @@
 import { mat2, mat3, mat4, vec3, vec4 } from 'gl-matrix';
-import { array2Vec3, createMesh, createProgramInfo, createSetValueFn, createWriteBufFn, degToRad, modifyWindow, mulM3V3, mulV3M3, printMat, resize, writeMultiBuf } from './tool';
+import { array2Vec3, createMesh, createProgramInfo, createSetValueFn, degToRad, modifyWindow, mulM3V3, mulV3M3, printMat, resize } from './tool';
 import { ui } from './ui';
 modifyWindow({ mat3, mulM3V3, printMat, mulV3M3, vec3, vec4, mat2, });
 
@@ -8,6 +8,7 @@ const vEle = `
 uniform mat4 u_proj;
 uniform mat4 u_view;
 uniform mat4 u_model;
+uniform mat4 u_world;
 uniform vec3 u_lightPoint;
 uniform vec3 u_viewWorldPos;
 attribute vec3 a_pos;
@@ -22,7 +23,7 @@ void main() {
     vec4 worldPos = u_model * vec4(a_pos,1); // 自己的坐标转换成世界坐标,a_pos类型vec3是已经转置的所以要放最右边
     gl_Position =   u_proj * u_view * worldPos; // 按照model view projection也就是倒着的pvm矩阵
     v_surface2Light = u_lightPoint - worldPos.xyz;
-    v_surface2View = u_viewWorldPos - worldPos.xyz;
+    v_surface2View = mat3(u_view) * u_viewWorldPos - worldPos.xyz;
     v_color = a_color; 
     v_normal = mat3(u_model) * a_normal;
 }`;
@@ -68,7 +69,7 @@ attribute vec3 a_pos;
 void main() {
     vec4 pos = vec4(a_pos,1);
     gl_Position =  u_proj * u_view * pos;
-    gl_PointSize = 24.;
+    gl_PointSize = 8.;
 }`;
 const fScene = `
 precision mediump float; 
@@ -82,9 +83,9 @@ const createInfo = (gl: WebGLRenderingContext) => ({
         gl,
         location: {
             attribute: {
-                a_pos: '',
-                a_color: '',
-                a_normal: '',
+                a_pos: 3,
+                a_color: 3,
+                a_normal: 3
             },
             uniform: {
                 u_proj: mat4.create(),
@@ -105,7 +106,7 @@ const createInfo = (gl: WebGLRenderingContext) => ({
         gl,
         location: {
             attribute: {
-                a_pos: ''
+                a_pos: 3
             },
             uniform: {
                 u_proj: mat4.create(),
@@ -213,7 +214,7 @@ export const start = (gl: WebGLRenderingContext, ani = false) => {
 
 const state = {
     value: {
-        z: 350, y: 150, x: 0,
+        z: 600, y: 150, x: 0,
         rotateCameraY: 0, rotateCameraX: 0, scale: 1,
         rotateY: 0, rotateX: 0,
         shininess: 50,
@@ -227,64 +228,44 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
     gl.enable(gl.CULL_FACE);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
     const { ele, scene } = info;
     gl.useProgram(ele.program);
+    ele.u_shininess = v.shininess;
     const projection = mat4.create();
-    const fieldOfView = degToRad(75);
+    const fieldOfView = degToRad(45);
     const aspect = gl.canvas.width / gl.canvas.height;
     const zNear = 1;
-    const zFar = 1000;
+    const zFar = 2000;
     mat4.perspective(projection, fieldOfView, aspect, zNear, zFar); // 投影
     ele.u_proj = projection;
     // 视锥在zNear 的距离时是 2 个单位高和 2 * aspect 个单位宽。视图的范围是 -1 到 +1 
     // 矩阵乘法的执行顺序是倒的
     const camera = mat4.create();
     const viewPos = [v.x, v.y, v.z];
+    ele.u_viewWorldPos = array2Vec3(viewPos);
+    mat4.translate(camera, camera, viewPos.map(_ => -_));
     mat4.rotateX(camera, camera, degToRad(v.rotateCameraX));
     mat4.rotateY(camera, camera, degToRad(v.rotateCameraY));
-    mat4.translate(camera, camera, viewPos.map(_ => -_));
     mat4.scale(camera, camera, [v.scale, v.scale, v.scale]);
-    var cameraPosition = [
-        camera[12],
-        camera[13],
-        camera[14],
-    ];
     ele.u_view = camera;
-    ele.u_viewWorldPos = array2Vec3(viewPos);
-    const scaleFactor = 1;
-
+    
     const model = mat4.create();
-
-    mat4.translate(model, model, [50, 50, 50].map(_ => _ / scaleFactor));
+    mat4.translate(model, model, [50, 50, 50]);
     mat4.rotateX(model, model, degToRad(v.rotateX));
     mat4.rotateY(model, model, degToRad(v.rotateY));
-    mat4.translate(model, model, [-50, -50, -50].map(_ => _ / scaleFactor));
+    mat4.translate(model, model, [-50, -50, -50]);
     ele.u_model = model;
-    ele.u_shininess = v.shininess;
     //
-    const posData = dataF.map(_ => _ / scaleFactor);
-    const norData = normalData;
-    writeMultiBuf(gl, [
-        {
-            data: posData,
-            size: 3,
-            location: ele.loc.a_pos
-        }, {
-            data: colorData,
-            size: 3,
-            location: ele.loc.a_color,
-        }, {
-            data: norData,
-            size: 3,
-            location: ele.loc.a_normal,
-        }
-    ]);
-    gl.drawArrays(gl.TRIANGLES, 0, posData.length / 3);
+    ele.a_color = colorData;
+    ele.a_normal= normalData;
+    ele.a_pos = dataF;
+    gl.drawArrays(gl.TRIANGLES, 0, dataF.length / 3);
 
     gl.useProgram(scene.program);
+    scene.a_pos = [70, 30, 120];
     scene.u_proj = projection;
     scene.u_view = camera;
-    createWriteBufFn(gl)([70, 30, 120], 3, scene.loc.a_pos);
     gl.drawArrays(gl.POINTS, 0, 1);
     createMesh({ gl, posLoc: scene.loc.a_pos, range: 3000, num: 20, is3d: true });
 };
