@@ -198,7 +198,10 @@ const programInfoFromKey = <A extends constraintNull, U extends constraintAll>({
 				return gl.getUniform(program, uloc as any);
 			}
 		});
-		(res as any)[x] = uniform[x]; // 初始化设定值
+		const initValue = uniform[x];
+		if (initValue) {
+			(res as any)[x] = initValue; // 初始化设定值
+		}
 		(loc as any)[x] = uloc;
 	});
 	res.program = program;

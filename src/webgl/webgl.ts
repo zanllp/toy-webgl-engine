@@ -243,25 +243,26 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
     });
     const viewPos = [v.x, v.y, v.z];
     ele.u_viewWorldPos = array2Vec3(viewPos);
-    const camera = scene.setViewMat(camera => {
-        mat4.translate(camera, camera, viewPos.map(_ => -_));
-        mat4.rotateX(camera, camera, degToRad(v.rotateCameraX));
-        mat4.rotateY(camera, camera, degToRad(v.rotateCameraY));
-        mat4.scale(camera, camera, [v.scale, v.scale, v.scale]);
+    const camera = scene.setViewMat(x => {
+        mat4.translate(x, x, viewPos.map(_ => -_));
+        mat4.rotateX(x, x, degToRad(v.rotateCameraX));
+        mat4.rotateY(x, x, degToRad(v.rotateCameraY));
+        mat4.scale(x, x, [v.scale, v.scale, v.scale]);
     });
-    box0.setModelMat(model => {
-        mat4.translate(model, model, [50, 50, 50]);
-        mat4.rotateX(model, model, degToRad(v.rotateX));
-        mat4.rotateY(model, model, degToRad(v.rotateY));
-        mat4.translate(model, model, [-50, -50, -50]);
+    
+    const model = mat4.create();
+    mat4.rotateX(model, model, degToRad(v.rotateX));
+    mat4.rotateY(model, model, degToRad(v.rotateY));
+    mat4.translate(model, model, [-50, -50, -50]);
+    box0.setModelMat(x => {
+        mat4.translate(x, x, [50, 50, 50]);
+        mat4.mul(x, x, model); // 作用顺序相乘顺序相反，右乘重复部分
     });
-    box1.setModelMat(model => {
-        mat4.translate(model, model, [250, 50, 50]);
-        mat4.rotateX(model, model, degToRad(v.rotateX));
-        mat4.rotateY(model, model, degToRad(v.rotateY));
-        mat4.translate(model, model, [-50, -50, -50]);
+    box1.setModelMat(x => {
+        mat4.translate(x, x, [250, 50, 50]);
+        mat4.mul(x, x, model);
     });
-    scene.render(gl, info.ele);
+    scene.render(gl, ele);
 
     gl.useProgram(plane.program);
     plane.a_pos = [70, 30, 120];
