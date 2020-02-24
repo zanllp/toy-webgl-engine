@@ -1,5 +1,5 @@
 import { mat2, mat3, mat4, vec3, vec4 } from 'gl-matrix';
-import { array2Vec3, createMesh, createProgramInfo, createSetValueFn, degToRad, modifyWindow, mulM3V3, mulV3M3, printMat, resize } from './tool';
+import { array2Vec3, createMesh, createProgramInfo, createSetValueFn, degToRad, modifyWindow, mulM3V3, mulV3M3, printMat, resize, Box, Scene } from './tool';
 import { ui } from './ui';
 modifyWindow({ mat3, mulM3V3, printMat, mulV3M3, vec3, vec4, mat2, });
 
@@ -102,7 +102,7 @@ const createInfo = (gl: WebGLRenderingContext) => ({
             fragment: fEle
         }
     }),
-    scene: createProgramInfo({
+    plane: createProgramInfo({
         gl,
         location: {
             attribute: {
@@ -206,6 +206,7 @@ export const start = (gl: WebGLRenderingContext, ani = false) => {
         ui.setupSlider('#rotate-y', { value: value.rotateY, slide: (x: any) => setV({ rotateY: x }), min: -360, max: 360 });
         ui.setupSlider('#rotate-x', { value: value.rotateX, slide: (x: any) => setV({ rotateX: x }), min: -360, max: 360 });
         ui.setupSlider('#range-shininess', { value: value.shininess, slide: (x: any) => setV({ shininess: x }), min: 1, max: 100, step });
+
         render(gl, info);
     }
 
@@ -229,110 +230,54 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    const { ele, scene } = info;
+    const { ele, plane } = info;
     gl.useProgram(ele.program);
     ele.u_shininess = v.shininess;
-    const projection = mat4.create();
-    const fieldOfView = degToRad(45);
-    const aspect = gl.canvas.width / gl.canvas.height;
-    const zNear = 1;
-    const zFar = 2000;
-    mat4.perspective(projection, fieldOfView, aspect, zNear, zFar); // 投影
-    ele.u_proj = projection;
-    // 视锥在zNear 的距离时是 2 个单位高和 2 * aspect 个单位宽。视图的范围是 -1 到 +1 
-    // 矩阵乘法的执行顺序是倒的
-    const camera = mat4.create();
+    const projection = scene.setProjectionMat(projection => {
+        // 视锥在zNear 的距离时是 2 个单位高和 2 * aspect 个单位宽。视图的范围是 -1 到 +1 
+        const fieldOfView = degToRad(45);
+        const aspect = gl.canvas.width / gl.canvas.height;
+        const zNear = 1;
+        const zFar = 2000;
+        mat4.perspective(projection, fieldOfView, aspect, zNear, zFar); // 投影
+    });
     const viewPos = [v.x, v.y, v.z];
     ele.u_viewWorldPos = array2Vec3(viewPos);
-    mat4.translate(camera, camera, viewPos.map(_ => -_));
-    mat4.rotateX(camera, camera, degToRad(v.rotateCameraX));
-    mat4.rotateY(camera, camera, degToRad(v.rotateCameraY));
-    mat4.scale(camera, camera, [v.scale, v.scale, v.scale]);
-    ele.u_view = camera;
-    
-    const model = mat4.create();
-    mat4.translate(model, model, [50, 50, 50]);
-    mat4.rotateX(model, model, degToRad(v.rotateX));
-    mat4.rotateY(model, model, degToRad(v.rotateY));
-    mat4.translate(model, model, [-50, -50, -50]);
-    ele.u_model = model;
-    //
-    ele.a_color = colorData;
-    ele.a_normal= normalData;
-    ele.a_pos = dataF;
-    gl.drawArrays(gl.TRIANGLES, 0, dataF.length / 3);
+    const camera = scene.setViewMat(camera => {
+        mat4.translate(camera, camera, viewPos.map(_ => -_));
+        mat4.rotateX(camera, camera, degToRad(v.rotateCameraX));
+        mat4.rotateY(camera, camera, degToRad(v.rotateCameraY));
+        mat4.scale(camera, camera, [v.scale, v.scale, v.scale]);
+    });
+    box0.setModelMat(model => {
+        mat4.translate(model, model, [50, 50, 50]);
+        mat4.rotateX(model, model, degToRad(v.rotateX));
+        mat4.rotateY(model, model, degToRad(v.rotateY));
+        mat4.translate(model, model, [-50, -50, -50]);
+    });
+    box1.setModelMat(model => {
+        mat4.translate(model, model, [250, 50, 50]);
+        mat4.rotateX(model, model, degToRad(v.rotateX));
+        mat4.rotateY(model, model, degToRad(v.rotateY));
+        mat4.translate(model, model, [-50, -50, -50]);
+    });
+    scene.render(gl, info.ele);
 
-    gl.useProgram(scene.program);
-    scene.a_pos = [70, 30, 120];
-    scene.u_proj = projection;
-    scene.u_view = camera;
+    gl.useProgram(plane.program);
+    plane.a_pos = [70, 30, 120];
+    plane.u_proj = projection;
+    plane.u_view = camera;
     gl.drawArrays(gl.POINTS, 0, 1);
-    createMesh({ gl, posLoc: scene.loc.a_pos, range: 3000, num: 20, is3d: true });
+    createMesh({ gl, posLoc: plane.loc.a_pos, range: 3000, num: 20, is3d: true });
 };
 export const webgl = (gl: WebGLRenderingContext) => {
     start(gl);
 };
-const data = [
-    // front
-    [100, 100, 100,
-        0, 100, 100,
-        0, 0, 100,
-        100, 100, 100,
-        0, 0, 100,
-        100, 0, 100,],
-    // back
-    [100, 100, 0,
-        0, 0, 0,
-        0, 100, 0,
-        100, 100, 0,
-        100, 0, 0,
-        0, 0, 0,],
-    // right
-    [100, 100, 100,
-        100, 0, 100,
-        100, 0, 0,
-        100, 100, 0,
-        100, 100, 100,
-        100, 0, 0,],
-    //left
-    [0, 100, 100,
-        0, 100, 0,
-        0, 0, 0,
-        0, 100, 100,
-        0, 0, 0,
-        0, 0, 100,],
-    //top
-    [100, 100, 0,
-        0, 100, 0,
-        0, 100, 100,
-        100, 100, 0,
-        0, 100, 100,
-        100, 100, 100,],
-    //bottom
-    [0, 0, 0,
-        100, 0, 0,
-        0, 0, 100,
-        100, 0, 0,
-        100, 0, 100,
-        0, 0, 100,],
-];
-const dataF = data.flat();
 
-const colorData = data.map(() => {
-    const color = Array.from(vec3.random(vec3.create()).map(Math.abs)).map(_ => _ / 1);
-    return [color, color, color, color, color, color];
-}).flat(2);
-/**
- * 自动计算表面法线
- */
-const ek = [] as number[][];
-const normalData = data.map((x) => {
-    const e = [[x[0], x[1], x[2]], [x[3], x[4], x[5]], [x[6], x[7], x[8]]];
-    const v1 = vec3.sub(vec3.create(), e[1], e[0]);
-    const v2 = vec3.sub(vec3.create(), e[2], e[0]);
-    const normal = vec3.cross(vec3.create(), v1, v2);
-    vec3.normalize(normal, normal);
-    const res = Array.from(normal);
-    ek.push(res);
-    return [res, res, res, res, res, res]; // 一个面2个三角形6个点
-}).flat(2);
+
+const box0 = new Box();
+box0.fillRandColor();
+const box1 = new Box();
+box1.fillRandColor();
+const scene = new Scene();
+scene.addModel(box0, box1);

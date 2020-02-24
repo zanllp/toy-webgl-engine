@@ -255,4 +255,170 @@ export const createSetValueFn = <T, V, U extends { value: V }>(gl: WebGLRenderin
 	};
 
 export const array2Vec3 = (_: Array<number>) => vec3.fromValues(_[0], _[1], _[2]);
+type PosDataType = number[][];
+export const flatPos = (data: PosDataType) => {
+	return data.flat(1);
+};
+
+export const randColor = (posData: PosDataType, factor = 1) => {
+	const colorData = posData.map(() => {
+		let color = Array.from(vec3.random(vec3.create()).map(Math.abs));
+		if (factor !== 1) {
+			color = color.map(_ => _ * factor);
+		}
+		return [color, color, color, color, color, color];
+	}).flat(2);
+	return colorData;
+};
+
+/**
+ * 计算表面法线
+ */
+export const calcNormal = (posData: PosDataType) => {
+	return posData.map((x) => {
+		const e = [[x[0], x[1], x[2]], [x[3], x[4], x[5]], [x[6], x[7], x[8]]];
+		const v1 = vec3.sub(vec3.create(), e[1], e[0]);
+		const v2 = vec3.sub(vec3.create(), e[2], e[0]);
+		const normal = vec3.cross(vec3.create(), v1, v2);
+		vec3.normalize(normal, normal);
+		const res = Array.from(normal);
+		return [res, res, res, res, res, res]; // 一个面2个三角形6个点
+	}).flat(2);
+};
+type Info = {
+	a_pos: Array<number>;
+	a_normal: Array<number>;
+	a_color: Array<number>;
+	u_model: mat4;
+	u_proj: mat4;
+	u_view: mat4;
+};
+export class Model {
+	constructor(data: PosDataType) {
+		this.data = data;
+		this.dataFlat = data.flat();
+		this.normal = calcNormal(this.data);
+	}
+	public readonly data: PosDataType;
+	public readonly dataFlat: Array<number>;
+	public readonly normal: Array<number>;
+	public modelMat?: mat4;
+	public color = new Array<number>();
+	public fillRandColor(factor = 1) {
+		this.color = randColor(this.data, factor);
+	}
+	public render(gl: WebGLRenderingContext) {
+		gl.drawArrays(gl.TRIANGLES, 0, this.dataFlat.length / 3);
+	}
+	public setModelMat(fn: (_: mat4) => mat4 | void) {
+		const mat = mat4.create();
+		const res = fn(mat);
+		if (res) {
+			this.modelMat = res;
+		} else {
+			this.modelMat = mat;
+		}
+		return this.modelMat;
+	}
+
+}
+
+export class Box extends Model {
+	public constructor(x = 100, y = 100, z = 100) {
+		const data = [
+			// front
+			[x, y, z,
+				0, y, z,
+				0, 0, z,
+				x, y, z,
+				0, 0, z,
+				x, 0, z,],
+			// back
+			[x, y, 0,
+				0, 0, 0,
+				0, y, 0,
+				x, y, 0,
+				x, 0, 0,
+				0, 0, 0,],
+			// right
+			[x, y, z,
+				x, 0, z,
+				x, 0, 0,
+				x, y, 0,
+				x, y, z,
+				x, 0, 0,],
+			//left
+			[0, y, z,
+				0, y, 0,
+				0, 0, 0,
+				0, y, z,
+				0, 0, 0,
+				0, 0, z,],
+			//top
+			[x, y, 0,
+				0, y, 0,
+				0, y, z,
+				x, y, 0,
+				0, y, z,
+				x, y, z,],
+			//bottom
+			[0, 0, 0,
+				x, 0, 0,
+				0, 0, z,
+				x, 0, 0,
+				x, 0, z,
+				0, 0, z,],
+		];
+		super(data);
+	}
+	public fillColor({ front, back, right, left, top, bottom }:
+		{ front: number[]; back: number[]; right: number[]; left: number[]; top: number[]; bottom: number[]; }) {
+		this.color = [front, back, right, left, top, bottom].map(c => [c, c, c, c, c, c]).flat(2);
+	}
+}
+
+export class Scene<T extends Info> {
+	public constructor(...models: Array<Model>) {
+		this.models.push(...models);
+	}
+	private projectionMat = mat4.create();
+	private viewMat = mat4.create();
+	private models = new Array<Model>();
+	public render(gl: WebGLRenderingContext, info: T) {
+		info.u_proj = this.projectionMat;
+		info.u_view = this.viewMat;
+		this.models.forEach(x => {
+			if (x.modelMat) {
+				info.u_model = x.modelMat;
+			}
+			info.a_color = x.color;
+			info.a_pos = x.dataFlat;
+			info.a_normal = x.normal;
+			x.render(gl);
+		});
+	}
+	public addModel(...model: Model[]) {
+		this.models.push(...model);
+	}
+	public setProjectionMat(fn: (_: mat4) => mat4 | void) {
+		const mat = mat4.create();
+		const res = fn(mat);
+		if (res) {
+			this.projectionMat = res;
+		} else {
+			this.projectionMat = mat;
+		}
+		return this.projectionMat;
+	}
+	public setViewMat(fn: (_: mat4) => mat4 | void) {
+		const mat = mat4.create();
+		const res = fn(mat);
+		if (res) {
+			this.viewMat = res;
+		} else {
+			this.viewMat = mat;
+		}
+		return this.viewMat;
+	}
+}
 
