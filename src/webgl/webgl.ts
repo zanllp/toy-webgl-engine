@@ -1,5 +1,5 @@
 import { mat2, mat3, mat4, vec3, vec4 } from 'gl-matrix';
-import { array2Vec3, createMesh, createProgramInfo, createSetValueFn, degToRad, modifyWindow, mulM3V3, mulV3M3, printMat, resize, Box, Scene } from './tool';
+import { array2Vec3, Box, createMesh, createProgramInfo, createSetValueFn, degToRad, modifyWindow, mulM3V3, mulV3M3, printMat, resize, Scene, createKeyListener } from './tool';
 import { ui } from './ui';
 modifyWindow({ mat3, mulM3V3, printMat, mulV3M3, vec3, vec4, mat2, });
 
@@ -121,98 +121,55 @@ const createInfo = (gl: WebGLRenderingContext) => ({
 });
 type infoT = ReturnType<typeof createInfo>;
 
-export const start = (gl: WebGLRenderingContext, ani = false) => {
+export const start = (gl: WebGLRenderingContext) => {
     resize(gl.canvas);
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     const info = createInfo(gl);
     const setV = createSetValueFn(gl, info, render, state);
     const { value } = state;
-    if (ani) {
-        let lt = 0;
-        let lRotate = value.rotateY;
-        const anifn = (t: number) => {
-            lRotate += (30 * (t - lt)) / 300.0;
-            setV({ rotateY: lRotate, rotateX: 360 - lRotate, z: -(Math.sin(lRotate / 100)) * 10 + 350 });
-            requestAnimationFrame(anifn);
-            lt = t;
-        };
-        requestAnimationFrame(anifn);
-    } else {
-        const step = 1;
-        document.addEventListener('wheel', x => {
-            const direction = x.deltaY / Math.abs(x.deltaY);
-            return setV(_ => ({ scale: _.scale * (1 + (direction * .1)) }));
-        });
-        document.addEventListener('mousedown', x => {
-            if (x.buttons === 1) {
-                state.clicked = true;
-            }
-        });
-        document.addEventListener('mouseup', x => {
-            if (x.buttons === 0) {
-                state.clicked = false;
-            }
-        });
-        document.addEventListener('mousemove', x => {
-            if (state.clicked) {
-                const { movementX, movementY } = x;
-                setV(y => ({
-                    rotateCameraX: y.rotateCameraX - movementY / 20,
-                    rotateCameraY: y.rotateCameraY - movementX / 5,
-                }));
-            }
-        });
-        document.addEventListener('keydown', x => {
-            const step = 3;
-            switch (x.code) {
-                case 'ArrowLeft':
-                    setV({ action: 'decr', key: 'rotateCameraY', value: step });
-                    break;
-                case 'ArrowRight':
-                    setV({ action: 'incr', key: 'rotateCameraY', value: step });
-                    break;
-                case 'ArrowDown':
-                    setV({ action: 'decr', key: 'rotateCameraX', value: step });
-                    break;
-                case 'ArrowUp':
-                    setV({ action: 'incr', key: 'rotateCameraX', value: step });
-                    break;
-                case 'PageUp':
-                    setV({ action: 'incr', key: 'y', value: step });
-                    break;
-                case 'PageDown':
-                    setV({ action: 'decr', key: 'y', value: step });
-                    break;
-                case 'KeyW':
-                    setV({ action: 'decr', key: 'z', value: step });
-                    break;
-                case 'KeyS':
-                    setV({ action: 'incr', key: 'z', value: step });
-                    break;
-                case 'KeyA':
-                    setV({ action: 'decr', key: 'x', value: step });
-                    break;
-                case 'KeyD':
-                    setV({ action: 'incr', key: 'x', value: step });
-                    break;
-                case 'KeyQ':
-                    setV({ action: 'decr', key: 'rotateCameraY', value: step });
-                    break;
-                case 'KeyE':
-                    setV({ action: 'incr', key: 'rotateCameraY', value: step });
-                    break;
-            }
-        });
-        ui.setupSlider('#rotate-y', { value: value.rotateY, slide: (x: any) => setV({ rotateY: x }), min: -360, max: 360 });
-        ui.setupSlider('#rotate-x', { value: value.rotateX, slide: (x: any) => setV({ rotateX: x }), min: -360, max: 360 });
-        ui.setupSlider('#range-shininess', { value: value.shininess, slide: (x: any) => setV({ shininess: x }), min: 1, max: 100, step });
+    const step = 1;
+    document.addEventListener('wheel', x => {
+        const direction = x.deltaY / Math.abs(x.deltaY);
+        return setV(_ => ({ scale: _.scale * (1 + (direction * .1)) }));
+    });
+    document.addEventListener('mousedown', x => {
+        if (x.buttons === 1) {
+            state.clicked = true;
+        }
+    });
+    document.addEventListener('mouseup', x => {
+        if (x.buttons === 0) {
+            state.clicked = false;
+        }
+    });
+    document.addEventListener('mousemove', x => {
+        if (state.clicked) {
+            const { movementX, movementY } = x;
+            setV(y => ({
+                rotateCameraX: y.rotateCameraX - movementY / 20,
+                rotateCameraY: y.rotateCameraY - movementX / 5,
+            }));
+        }
+    });
+    createKeyListener({
+        ArrowLeft: t => setV({ action: 'decr', key: 'rotateCameraY', value: t / 20 }),
+        ArrowDown: t => setV({ action: 'decr', key: 'rotateCameraX', value: t / 20 }),
+        ArrowUp: t => setV({ action: 'incr', key: 'rotateCameraX', value: t / 20 }),
+        PageUp: t => setV({ action: 'incr', key: 'y', value: t / 20 }),
+        PageDown: t => setV({ action: 'decr', key: 'y', value: t / 20 }),
+        KeyW: t => setV({ action: 'decr', key: 'z', value: t / 20 }),
+        KeyS: t => setV({ action: 'incr', key: 'z', value: t / 20 }),
+        KeyA: t => setV({ action: 'decr', key: 'x', value: t / 20 }),
+        KeyD: t => setV({ action: 'incr', key: 'x', value: t / 20 }),
+        KeyQ: t => setV({ action: 'decr', key: 'rotateCameraY', value: t / 50 }),
+        KeyE: t => setV({ action: 'incr', key: 'rotateCameraY', value: t / 50 })
+    });
+    ui.setupSlider('#rotate-y', { value: value.rotateY, slide: (x: any) => setV({ rotateY: x }), min: -360, max: 360 });
+    ui.setupSlider('#rotate-x', { value: value.rotateX, slide: (x: any) => setV({ rotateX: x }), min: -360, max: 360 });
+    ui.setupSlider('#range-shininess', { value: value.shininess, slide: (x: any) => setV({ shininess: x }), min: 1, max: 100, step });
 
-        render(gl, info);
-    }
-
-
+    render(gl, info);
 };
-
 const state = {
     value: {
         z: 600, y: 150, x: 0,
@@ -249,7 +206,7 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
         mat4.rotateY(x, x, degToRad(v.rotateCameraY));
         mat4.scale(x, x, [v.scale, v.scale, v.scale]);
     });
-    
+
     const model = mat4.create();
     mat4.rotateX(model, model, degToRad(v.rotateX));
     mat4.rotateY(model, model, degToRad(v.rotateY));
@@ -280,5 +237,4 @@ const box0 = new Box();
 box0.fillRandColor();
 const box1 = new Box();
 box1.fillRandColor();
-const scene = new Scene();
-scene.addModel(box0, box1);
+const scene = new Scene(box0, box1);

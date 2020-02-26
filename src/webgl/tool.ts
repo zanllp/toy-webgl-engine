@@ -229,8 +229,10 @@ export const createProgramInfo = <A extends constraintNull, U extends constraint
 	return programInfoFromKey({ gl, program, attribute: location.attribute, uniform: location.uniform });
 };
 
-export const createSetValueFn = <T, V, U extends { value: V }>(gl: WebGLRenderingContext, programInfo: T, render: (gl: WebGLRenderingContext, info: T, v?: V) => any, state: U) =>
-	(s: (Partial<V> | ((s: V) => Partial<V>) | { action: 'incr' | 'decr', key: keyof V, value: number })) => {
+export type setVParamsType<V> = (Partial<V> | ((s: V) => Partial<V>) | { action: 'incr' | 'decr', key: keyof V, value: number });
+export const createSetValueFn = <T, V, U extends { value: V }>(gl: WebGLRenderingContext, programInfo: T, render: (gl: WebGLRenderingContext, info: T, v?: V) => any, state: U) => {
+	const throttleRender = throttle((s: U) => render(gl, programInfo, s.value), 1000 / 60);
+	return (s: setVParamsType<V>) => {
 		let { value } = state;
 		if (typeof s === 'object') {
 			if ('action' in s) {
@@ -253,11 +255,13 @@ export const createSetValueFn = <T, V, U extends { value: V }>(gl: WebGLRenderin
 			value = { ...value, ...s(value) };
 		}
 		state.value = value;
-		render(gl, programInfo, value);
+		throttleRender(state);
 		return value;
 	};
+};
 
 export const array2Vec3 = (_: Array<number>) => vec3.fromValues(_[0], _[1], _[2]);
+
 type PosDataType = number[][];
 export const flatPos = (data: PosDataType) => {
 	return data.flat(1);
@@ -425,3 +429,57 @@ export class Scene<T extends Info> {
 	}
 }
 
+/**
+ * 防抖
+ * @param func 被包装函数
+ * @param delay 延时，默认 300ms
+ */
+export const debounce = (func: (...args: any[]) => any, delay: number = 300) => {
+	let interval = -1;
+	return (...args: any[]) => {
+		if (interval !== -1) {
+			clearInterval(interval);
+		}
+		interval = setTimeout(() => func(...args), delay) as any;
+	};
+};
+/**
+ * 阀值
+ * @param func 被包装函数
+ * @param delay 延时，默认 300ms
+ */
+export const throttle = (func: (...args: any[]) => any, threshold: number = 300) => {
+	let lastT = 0;
+	return (...args: any[]) => {
+		if (lastT === 0 || Date.now() - lastT > threshold) {
+			lastT = Date.now();
+			func(...args);
+		}
+	};
+};
+
+
+export type actionsType<V> = ((tDiff: number) => setVParamsType<V>) | { action: (tDiff: number) => setVParamsType<V>, once?: boolean };
+export const createKeyListener = <V>(actions: { [x: string]: actionsType<V> }) => {
+    const keyPressing = new Map<string, boolean>();
+    document.addEventListener('keydown', x => keyPressing.set(x.code, true));
+    document.addEventListener('keyup', x => keyPressing.delete(x.code));
+    let lastT = 0;
+    const loop = (t: number) => {
+        Array.from(keyPressing).filter(([k, v]) => v && actions[k as any]).forEach(([k]) => {
+            const p = actions[k as any];
+            if (typeof p === 'function') {
+                p(t - lastT);
+            } else {
+                const { once, action } = p;
+                action(t - lastT);
+                if (once) { // 只执行一次
+                    keyPressing.delete(k);
+                }
+            }
+        });
+        lastT = t;
+        requestAnimationFrame(loop);
+    };
+    loop(16.6);
+};
