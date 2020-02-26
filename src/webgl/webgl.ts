@@ -126,8 +126,7 @@ export const start = (gl: WebGLRenderingContext) => {
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     const info = createInfo(gl);
     const setV = createSetValueFn(gl, info, render, state);
-    const { value } = state;
-    const step = 1;
+    render(gl, info);
     document.addEventListener('wheel', x => {
         const direction = x.deltaY / Math.abs(x.deltaY);
         return setV(_ => ({ scale: _.scale * (1 + (direction * .1)) }));
@@ -164,11 +163,10 @@ export const start = (gl: WebGLRenderingContext) => {
         KeyQ: t => setV({ action: 'decr', key: 'rotateCameraY', value: t / 50 }),
         KeyE: t => setV({ action: 'incr', key: 'rotateCameraY', value: t / 50 })
     });
+    const { value } = state;
     ui.setupSlider('#rotate-y', { value: value.rotateY, slide: (x: any) => setV({ rotateY: x }), min: -360, max: 360 });
     ui.setupSlider('#rotate-x', { value: value.rotateX, slide: (x: any) => setV({ rotateX: x }), min: -360, max: 360 });
-    ui.setupSlider('#range-shininess', { value: value.shininess, slide: (x: any) => setV({ shininess: x }), min: 1, max: 100, step });
-
-    render(gl, info);
+    ui.setupSlider('#range-shininess', { value: value.shininess, slide: (x: any) => setV({ shininess: x }), min: 1, max: 100, step: 1 });
 };
 const state = {
     value: {
