@@ -1,0 +1,29 @@
+name: deploy
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: self-hosted 
+    steps:
+    - name: 拉取最新版本
+      run: |
+        cd /home/webgl
+        sudo git reset --hard
+        sudo git pull  #记得提前git clone https://github.com/zanllp/zanllp.cn.git 并 yarn
+    - name: 编译
+      run: |
+        cd /home/webgl
+        sudo chmod -R 777 *
+        sudo yarn
+        sudo yarn build #用npm的npm run build 也行
+    - name: 部署静态文件
+      run: |
+        sudo mv /home/webgl/build /home/webgl/webgl #编译完的文件夹改名
+        sudo rm -rf /home/firstPage/webgl
+        sudo mv /home/webgl/webgl /home/firstPage #将console文件夹移到首页底下
+        cd /home/firstPage/webgl
+        sudo cp -R -f static ../ #console的静态文件和首页的递归合并
