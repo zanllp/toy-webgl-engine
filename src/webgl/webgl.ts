@@ -209,7 +209,7 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
         mat4.translate(x, x, [50, 50, 50]);
         mat4.rotateX(x, x, degToRad(v.rotateX));
         mat4.rotateY(x, x, degToRad(v.rotateY));
-        mat4.translate(x, x, [-50, -50, -50]);// 立方体需要矫正位置，因为球的中心点就在后左底三面相加点
+        mat4.translate(x, x, [-50, -50, -50]);// 立方体需要矫正位置，因为球的中心点就在后左底三面相交点
     });
     sphere.setModelMat(x => {
         mat4.translate(x, x, [250, 150, 50]); // 球不需要矫正位置，因为球的中心点就在0，0，0

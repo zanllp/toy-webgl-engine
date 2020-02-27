@@ -105,6 +105,18 @@ export const writeBufferData = (gl: WebGLRenderingContext, data: Iterable<number
 	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
 	gl.enableVertexAttribArray(location);
 	gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
+	return buf;
+};
+export const updateBufferData = (gl: WebGLRenderingContext, buf: WebGLBuffer | null, data: Iterable<number>, size: number, location: number) => {
+	gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+	gl.enableVertexAttribArray(location);
+	gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
+	return buf;
+};
+export const reuseBufferData = (gl: WebGLRenderingContext, size: number, location: number) => {
+	gl.enableVertexAttribArray(location);
+	gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
 };
 export const degToRad = (d: number) => {
 	return d * Math.PI / 180;
@@ -177,10 +189,15 @@ const programInfoFromKey = <A extends constraintNull, U extends constraintAll>({
 		(loc as any)[x] = gl.getAttribLocation(program, x);
 		const size = attribute[x];
 		let data = new Array<number>();
+		let buf: WebGLBuffer | null = null;
 		Object.defineProperty(res, x, {
 			set(_: any) {
-				data = _;
-				writeBufferData(gl, data, size, loc[x]);
+				if (data !== _) {
+					data = _;
+					buf = writeBufferData(gl, data, size, loc[x]);
+				} else {
+					reuseBufferData(gl, size, loc[x]);
+				}
 			},
 			get() {
 				return data;
@@ -347,7 +364,7 @@ const r2t = (rect: Array<number>) => {
 };
 
 export class Box extends Model {
-	public constructor(x = 100, y = 100, z = 100) {
+	public constructor({ x = 100, y = 100, z = 100 }: { x?: number; y?: number; z?: number; } = {}) {
 		const data = [
 			// front
 			r2t([x, y, z,
@@ -395,10 +412,10 @@ type latLong = {
 };
 export class Sphere extends Model {
 	/**
-	 * 球体
+	 * 球体，面数 = 2 x latitude.sub x longitube.sub，默认1800面
 	 * @param radius 半径
-	 * @param lat 维度相关
-	 * @param long 经度相关
+	 * @param latitude 维度相关
+	 * @param longitude 经度相关
 	 */
 	public constructor({ radius = 100, latitude, longitude }: { radius?: number; latitude?: Partial<latLong>; longitude?: Partial<latLong>; } = {}) {
 		const lat = { start: degToRad(90), end: degToRad(-90), sub: 30, ...latitude };
@@ -463,6 +480,7 @@ export class Scene<T extends Info> {
 			info.a_color = x.color;
 			info.a_pos = x.dataFlat;
 			info.a_normal = x.normal;
+
 			x.render(gl);
 		});
 	}
