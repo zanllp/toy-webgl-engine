@@ -1,5 +1,5 @@
 import { mat2, mat3, mat4, vec3, vec4 } from 'gl-matrix';
-import { array2Vec3, Box, createMesh, createProgramInfo, createSetValueFn, degToRad, modifyWindow, mulM3V3, mulV3M3, printMat, resize, Scene, createKeyListener, Sphere } from './tool';
+import { array2Vec3, Box, createProgramInfo, createSetValueFn, degToRad, modifyWindow, mulM3V3, mulV3M3, printMat, resize, Scene, createKeyListener, Sphere, Mesh, Point } from './tool';
 import { ui } from './ui';
 modifyWindow({ mat3, mulM3V3, printMat, mulV3M3, vec3, vec4, mat2, d2r: degToRad });
 
@@ -219,11 +219,9 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
     scene.render(gl, ele);
 
     gl.useProgram(plane.program);
-    plane.a_pos = [70, 30, 120];
-    plane.u_proj = projection;
-    plane.u_view = camera;
-    gl.drawArrays(gl.POINTS, 0, 1);
-    createMesh({ gl, posLoc: plane.loc.a_pos, range: 3000, num: 20, is3d: true });
+    scene2.setProjectionMat(projection);
+    scene2.setViewMat(camera);
+    scene2.render(gl, plane);
 };
 export const webgl = (gl: WebGLRenderingContext) => {
     start(gl);
@@ -232,8 +230,10 @@ export const webgl = (gl: WebGLRenderingContext) => {
 
 const box0 = new Box();
 box0.fillRandColor();
-const sub = 100;
+const sub = 400;
 const sphere = new Sphere({ radius: 100, latitude: { sub }, longitude: { sub } });
-//sphere.fillColor(24, 144, 255);
 sphere.fillRandColor();
 const scene = new Scene(box0, sphere);
+const mesh = new Mesh({ is3d: true, range: 3000, num: 50 });
+const point = new Point(70, 30, 120);
+const scene2 = new Scene(mesh, point);

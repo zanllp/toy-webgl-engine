@@ -88,63 +88,33 @@ export const printMat = (rank: number, s: ArrayLike<number>) => {
 	}
 	console.table(res);
 };
-export const createWriteBufFn = (gl: WebGLRenderingContext) => {
-	const fn = (data: Iterable<number>, size: number, location: number) => {
-		writeBufferData(gl, data, size, location);
-		return fn;
-	};
-	return fn;
-};
-export const writeMultiBuf = (gl: WebGLRenderingContext, p: { data: Iterable<number>; size: number; location: number }[]) => {
-	p.forEach(x => writeBufferData(gl, x.data, x.size, x.location));
-};
 
-export const writeBufferData = (gl: WebGLRenderingContext, data: Iterable<number>, size: number, location: number) => {
-	const buf = gl.createBuffer();
-	gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
-	gl.enableVertexAttribArray(location);
-	gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
-	return buf;
-};
-export const updateBufferData = (gl: WebGLRenderingContext, buf: WebGLBuffer | null, data: Iterable<number>, size: number, location: number) => {
-	gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
-	gl.enableVertexAttribArray(location);
-	gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
-	return buf;
-};
-export const reuseBufferData = (gl: WebGLRenderingContext, size: number, location: number) => {
-	gl.enableVertexAttribArray(location);
-	gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
+
+export const BufferData = {
+	/**
+	 * 重用buffer
+	 */
+	reuse(gl: WebGLRenderingContext, buf: WebGLBuffer | null, size: number, location: number) {
+		gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+		gl.enableVertexAttribArray(location);
+		gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
+	},
+	/**
+	 * 从新的数据创建buffer
+	 */
+	write(gl: WebGLRenderingContext, data: Iterable<number>, size: number, location: number) {
+		const buf = gl.createBuffer();
+		gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+		gl.enableVertexAttribArray(location);
+		gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
+		return buf;
+	}
 };
 export const degToRad = (d: number) => {
 	return d * Math.PI / 180;
 };
-export function createMesh({ gl, posLoc, range = 1500, num = 10, is3d = false }: { gl: WebGLRenderingContext; posLoc: number; range?: number; num?: number; is3d?: boolean; }) {
-	const data = [] as number[][];
-	// 0 -> 1
-	for (let i = 0; i < num + 1; i++) {
-		const leftRow = [0, i / num];
-		const rightRow = [1, i / num];
-		const topCol = [i / num, 1];
-		const bottomCol = [i / num, 0];
-		data.push(leftRow, rightRow, topCol, bottomCol);
-	}
-	const dst = data.map((x) => {
-		x[0] -= 0.5;
-		x[1] -= 0.5;
-		if (is3d) {
-			x[2] = x[1];
-			x[1] = 0;
-		}
-		return x;
-	}).flat(2).map(x => x *= range);
-	const size = is3d ? 3 : 2;
-	writeBufferData(gl, dst, size, posLoc);
-	gl.drawArrays(gl.LINES, 0, dst.length / size);
-	return dst.length / size;
-}
+
 type typeAll = mat3 | mat4 | vec4 | vec3 | vec2 | number;
 type constraintNull = { [x: string]: number };
 type constraintAll = { [x: string]: typeAll | null };
@@ -184,7 +154,7 @@ const programInfoFromKey = <A extends constraintNull, U extends constraintAll>({
 	{ gl: WebGLRenderingContext; program: WebGLProgram; attribute: A; uniform: U; }) => {
 	gl.useProgram(program);
 	const loc = {} as { [p in keyof A]: number } & { [p in keyof U]: WebGLUniformLocation | null };
-	const res = {} as { program: WebGLProgram; loc: typeof loc; } & unifType<U> & { [p in keyof A]: Array<number> }; // 如果定义在一个即将展开的对象上,setget生效
+	const res = {} as { program: WebGLProgram; loc: typeof loc; src: A & U } & unifType<U> & { [p in keyof A]: Array<number> }; // 如果定义在一个即将展开的对象上,setget生效
 	Object.keys(attribute).forEach(x => {
 		(loc as any)[x] = gl.getAttribLocation(program, x);
 		const size = attribute[x];
@@ -193,10 +163,11 @@ const programInfoFromKey = <A extends constraintNull, U extends constraintAll>({
 		Object.defineProperty(res, x, {
 			set(_: any) {
 				if (data !== _) {
+					(data as any) = null;
 					data = _;
-					buf = writeBufferData(gl, data, size, loc[x]);
+					buf = BufferData.write(gl, data, size, loc[x]);
 				} else {
-					reuseBufferData(gl, size, loc[x]);
+					BufferData.reuse(gl, buf, size, loc[x]);
 				}
 			},
 			get() {
@@ -223,6 +194,7 @@ const programInfoFromKey = <A extends constraintNull, U extends constraintAll>({
 	});
 	res.program = program;
 	res.loc = loc;
+	res.src = { ...attribute, ...uniform };
 	return res;
 };
 export type programInfoT = ReturnType<typeof programInfoFromKey>;
@@ -311,11 +283,12 @@ export const calcNormal = (posData: PosDataType) => {
 };
 type Info = {
 	a_pos: Array<number>;
-	a_normal: Array<number>;
-	a_color: Array<number>;
-	u_model: mat4;
+	a_normal?: Array<number>;
+	a_color?: Array<number>;
+	u_model?: mat4;
 	u_proj: mat4;
 	u_view: mat4;
+	src: any
 };
 export class Model {
 	constructor(data: PosDataType) {
@@ -463,6 +436,44 @@ export class Sphere extends Model {
 	}
 }
 
+export class Mesh extends Model {
+	public constructor({ range = 1500, num = 10, is3d = false }: { range?: number; num?: number; is3d?: boolean; }) {
+		const data = [] as number[][];
+		// 0 -> 1
+		for (let i = 0; i < num + 1; i++) {
+			const leftRow = [0, i / num];
+			const rightRow = [1, i / num];
+			const topCol = [i / num, 1];
+			const bottomCol = [i / num, 0];
+			data.push(leftRow, rightRow, topCol, bottomCol);
+		}
+		const dst = data.map((x) => {
+			x[0] -= 0.5;
+			x[1] -= 0.5;
+			if (is3d) {
+				x[2] = x[1];
+				x[1] = 0;
+			}
+			return x.map(x => x *= range);
+		});
+		super(dst);
+		this.size = is3d ? 3 : 2;
+	}
+	public size: number;
+	public render(gl: WebGLRenderingContext) {
+		gl.drawArrays(gl.LINES, 0, this.dataFlat.length / this.size);
+	}
+}
+
+export class Point extends Model {
+	public constructor(x: number, y: number, z: number) {
+		super([[x, y, z]]);
+	}
+	public render(gl: WebGLRenderingContext) {
+		gl.drawArrays(gl.POINTS, 0, 1);
+	}
+}
+
 export class Scene<T extends Info> {
 	public constructor(...models: Array<Model>) {
 		this.models.push(...models);
@@ -474,12 +485,16 @@ export class Scene<T extends Info> {
 		info.u_proj = this.projectionMat;
 		info.u_view = this.viewMat;
 		this.models.forEach(x => {
-			if (x.modelMat) {
+			if (x.modelMat && info.src['u_model']) {
 				info.u_model = x.modelMat;
 			}
-			info.a_color = x.color;
+			if (info.src['a_color']) { // 查看是否定义了这个attribute，比info.a_color速度更快
+				info.a_color = x.color;
+			}
+			if (info.src['a_normal']) {
+				info.a_normal = x.normal;
+			}
 			info.a_pos = x.dataFlat;
-			info.a_normal = x.normal;
 
 			x.render(gl);
 		});
@@ -487,23 +502,31 @@ export class Scene<T extends Info> {
 	public addModel(...model: Model[]) {
 		this.models.push(...model);
 	}
-	public setProjectionMat(fn: (_: mat4) => mat4 | void) {
-		const mat = mat4.create();
-		const res = fn(mat);
-		if (res) {
-			this.projectionMat = res;
+	public setProjectionMat(fn: ((_: mat4) => mat4 | void) | mat4) {
+		if (typeof fn === 'function') {
+			const mat = mat4.create();
+			const res = fn(mat);
+			if (res) {
+				this.projectionMat = res;
+			} else {
+				this.projectionMat = mat;
+			}
 		} else {
-			this.projectionMat = mat;
+			this.projectionMat = fn;
 		}
 		return this.projectionMat;
 	}
-	public setViewMat(fn: (_: mat4) => mat4 | void) {
-		const mat = mat4.create();
-		const res = fn(mat);
-		if (res) {
-			this.viewMat = res;
+	public setViewMat(fn: ((_: mat4) => mat4 | void) | mat4) {
+		if (typeof fn === 'function') {
+			const mat = mat4.create();
+			const res = fn(mat);
+			if (res) {
+				this.viewMat = res;
+			} else {
+				this.viewMat = mat;
+			}
 		} else {
-			this.viewMat = mat;
+			this.viewMat = fn;
 		}
 		return this.viewMat;
 	}
@@ -541,20 +564,22 @@ export const throttle = (func: (...args: any[]) => any, threshold: number = 300)
 
 export type actionsType<V> = ((tDiff: number) => setVParamsType<V>) | { action: (tDiff: number) => setVParamsType<V>, once?: boolean };
 export const createKeyListener = <V>(actions: { [x: string]: actionsType<V> }) => {
-	const keyPressing = new Map<string, boolean>();
-	document.addEventListener('keydown', x => keyPressing.set(x.code, true));
+	const keyPressing = new Set<string>();
+	document.addEventListener('keydown', x => keyPressing.add(x.code));
 	document.addEventListener('keyup', x => keyPressing.delete(x.code));
 	let lastT = 0;
 	const loop = (t: number) => {
-		Array.from(keyPressing).filter(([k, v]) => v && actions[k as any]).forEach(([k]) => {
+		keyPressing.forEach((k) => {
 			const p = actions[k as any];
-			if (typeof p === 'function') {
-				p(t - lastT);
-			} else {
-				const { once, action } = p;
-				action(t - lastT);
-				if (once) { // 只执行一次
-					keyPressing.delete(k);
+			if (p) {
+				if (typeof p === 'function') {
+					p(t - lastT);
+				} else {
+					const { once, action } = p;
+					action(t - lastT);
+					if (once) { // 只执行一次
+						keyPressing.delete(k);
+					}
 				}
 			}
 		});
