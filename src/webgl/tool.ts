@@ -150,30 +150,34 @@ const createSetUniformFn = (gl: WebGLRenderingContext, loc: WebGLUniformLocation
 };
 
 type unifType<U> = { [p in keyof U]: U[p] };
+type attrResType = { set(data: Array<number>, id?: any): void, get(id: any): Array<number> | undefined };
+type attrType<A> = { [p in keyof A]: attrResType };
 const programInfoFromKey = <A extends constraintNull, U extends constraintAll>({ gl, program, attribute, uniform }:
 	{ gl: WebGLRenderingContext; program: WebGLProgram; attribute: A; uniform: U; }) => {
 	gl.useProgram(program);
 	const loc = {} as { [p in keyof A]: number } & { [p in keyof U]: WebGLUniformLocation | null };
-	const res = {} as { program: WebGLProgram; loc: typeof loc; src: A & U } & unifType<U> & { [p in keyof A]: Array<number> }; // 如果定义在一个即将展开的对象上,setget生效
+	const res = {} as { program: WebGLProgram; loc: typeof loc; src: A & U } & unifType<U> & attrType<A>; // 如果定义在一个即将展开的对象上,setget生效
 	Object.keys(attribute).forEach(x => {
 		(loc as any)[x] = gl.getAttribLocation(program, x);
 		const size = attribute[x];
-		let data = new Array<number>();
-		let buf: WebGLBuffer | null = null;
-		Object.defineProperty(res, x, {
-			set(_: any) {
-				if (data !== _) {
-					(data as any) = null;
-					data = _;
-					buf = BufferData.write(gl, data, size, loc[x]);
-				} else {
-					BufferData.reuse(gl, buf, size, loc[x]);
-				}
+		const idRec = new Map<any, { d: Array<number>; b: WebGLBuffer | null }>();
+		(res as any)[x] = {
+			get(id: any) {
+				return idRec.get(id) && idRec.get(id)!.d;
 			},
-			get() {
-				return data;
+			set(data: any, id?: any) {
+				if (id === undefined) {
+					BufferData.write(gl, data, size, loc[x]);
+				} else {
+					if (idRec.get(id) && idRec.get(id)!.d === data) { // 可以重用数据
+						BufferData.reuse(gl, idRec.get(id)!.b, size, loc[x]);
+					} else {
+						const b = BufferData.write(gl, data, size, loc[x]);
+						idRec.set(id, { d: data, b });
+					}
+				}
 			}
-		});
+		};
 	});
 	Object.keys(uniform).forEach(x => {
 		const uloc = gl.getUniformLocation(program, x);
@@ -282,9 +286,9 @@ export const calcNormal = (posData: PosDataType) => {
 	}).flat(2);
 };
 type Info = {
-	a_pos: Array<number>;
-	a_normal?: Array<number>;
-	a_color?: Array<number>;
+	a_pos: attrResType;
+	a_normal?: attrResType;
+	a_color?: attrResType;
 	u_model?: mat4;
 	u_proj: mat4;
 	u_view: mat4;
@@ -390,7 +394,8 @@ export class Sphere extends Model {
 	 * @param latitude 维度相关
 	 * @param longitude 经度相关
 	 */
-	public constructor({ radius = 100, latitude, longitude }: { radius?: number; latitude?: Partial<latLong>; longitude?: Partial<latLong>; } = {}) {
+	public constructor({ radius = 100, latitude, longitude, color = 'none' }:
+		{ radius?: number; latitude?: Partial<latLong>; longitude?: Partial<latLong>; color?: 'none' | 'rand' | Array<number> } = {}) {
 		const lat = { start: degToRad(90), end: degToRad(-90), sub: 30, ...latitude };
 		const long = { start: 0, end: degToRad(360), sub: 30, ...longitude };
 		const pos = new Array<Array<Array<number>>>();
@@ -422,6 +427,12 @@ export class Sphere extends Model {
 
 		}
 		super(data);
+
+		if (color === 'rand') {
+			this.fillRandColor();
+		} else if (color instanceof Array) {
+			this.fillColor(...color);
+		}
 	}
 	/**
 	 * 填充颜色
@@ -489,12 +500,12 @@ export class Scene<T extends Info> {
 				info.u_model = x.modelMat;
 			}
 			if (info.src['a_color']) { // 查看是否定义了这个attribute，比info.a_color速度更快
-				info.a_color = x.color;
+				info.a_color!.set(x.color, x);
 			}
 			if (info.src['a_normal']) {
-				info.a_normal = x.normal;
+				info.a_normal!.set(x.normal, x);
 			}
-			info.a_pos = x.dataFlat;
+			info.a_pos.set(x.dataFlat, x);
 
 			x.render(gl);
 		});

@@ -126,6 +126,11 @@ export const start = (gl: WebGLRenderingContext) => {
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     const info = createInfo(gl);
     const setV = createSetValueFn(gl, info, render, state);
+    const e = () => {
+        render(gl, info);
+        requestAnimationFrame(e);
+    };
+    e();
     render(gl, info);
     document.addEventListener('wheel', x => {
         const direction = x.deltaY / Math.abs(x.deltaY);
@@ -170,7 +175,7 @@ export const start = (gl: WebGLRenderingContext) => {
 };
 const state = {
     value: {
-        z: 600, y: 150, x: 0,
+        z: 1200, y: 150, x: 0,
         rotateCameraY: 0, rotateCameraX: 0, scale: 1,
         rotateY: 0, rotateX: 0,
         shininess: 50,
@@ -211,29 +216,39 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
         mat4.rotateY(x, x, degToRad(v.rotateY));
         mat4.translate(x, x, [-50, -50, -50]);// 立方体需要矫正位置，因为球的中心点就在后左底三面相交点
     });
-    sphere.setModelMat(x => {
-        mat4.translate(x, x, [250, 150, 50]); // 球不需要矫正位置，因为球的中心点就在0，0，0
-        mat4.rotateX(x, x, degToRad(v.rotateX));
-        mat4.rotateY(x, x, degToRad(v.rotateY));
+    spheres.forEach(y => {
+        y.setModelMat(x => {
+            mat4.translate(x, x, [-500 + 1000 * Math.random(), 500 * Math.random(), -500 + 1000 * Math.random()]); // 球不需要矫正位置，因为球的中心点就在0，0，0
+        });
     });
+    //largeSphere.setModelMat(x => {
+    //    mat4.translate(x, x, [250, 150, 50]); // 球不需要矫正位置，因为球的中心点就在0，0，0
+    //    mat4.rotateX(x, x, degToRad(v.rotateX));
+    //    mat4.rotateY(x, x, degToRad(v.rotateY));
+    //});
     scene.render(gl, ele);
-
     gl.useProgram(plane.program);
     scene2.setProjectionMat(projection);
     scene2.setViewMat(camera);
     scene2.render(gl, plane);
 };
 export const webgl = (gl: WebGLRenderingContext) => {
-    start(gl);
+   setTimeout(()=> start(gl));
 };
 
 
 const box0 = new Box();
 box0.fillRandColor();
-const sub = 400;
-const sphere = new Sphere({ radius: 100, latitude: { sub }, longitude: { sub } });
-sphere.fillRandColor();
-const scene = new Scene(box0, sphere);
-const mesh = new Mesh({ is3d: true, range: 3000, num: 50 });
+const sub = 10;
+const spheres = new Array<Sphere>();
+for (let i = 0; i < 2000; i++) {
+    const s = new Sphere({ radius: 10, latitude: { sub }, longitude: { sub } });
+    s.fillRandColor();
+    spheres.push(s);
+}
+//const largeSphere = new Sphere({ radius: 1000, latitude: { sub:2500 }, longitude: { sub:2500 }, color: 'rand' }); // 1250w面
+
+const scene = new Scene(box0, ...spheres);
+const mesh = new Mesh({ is3d: true, range: 8000, num: 100 });
 const point = new Point(70, 30, 120);
 const scene2 = new Scene(mesh, point);
