@@ -329,58 +329,120 @@ export class Model {
 	}
 
 }
+/**
+ * rect2triangle,将一个矩形展开成2个三角形
+ * @param rect 逆时针顺序的矩形
+ */
+const r2t = (rect: Array<number>) => {
+	for (let i = 0; i < 3; i++) {
+		rect[5 * 3 + i] = rect[3 * 3 + i];
+	}
+	for (let i = 0; i < 3; i++) {
+		rect[4 * 3 + i] = rect[2 * 3 + i];
+	}
+	for (let i = 0; i < 3; i++) {
+		rect[3 * 3 + i] = rect[i];
+	}
+	return rect;
+};
 
 export class Box extends Model {
 	public constructor(x = 100, y = 100, z = 100) {
 		const data = [
 			// front
-			[x, y, z,
+			r2t([x, y, z,
 				0, y, z,
 				0, 0, z,
-				x, y, z,
-				0, 0, z,
-				x, 0, z,],
+				x, 0, z,]),
 			// back
-			[x, y, 0,
-				0, 0, 0,
-				0, y, 0,
-				x, y, 0,
+			r2t([x, y, 0,
 				x, 0, 0,
-				0, 0, 0,],
+				0, 0, 0,
+				0, y, 0,]),
 			// right
-			[x, y, z,
+			r2t([x, y, z,
 				x, 0, z,
 				x, 0, 0,
-				x, y, 0,
-				x, y, z,
-				x, 0, 0,],
+				x, y, 0]),
 			//left
-			[0, y, z,
+			r2t([0, y, z,
 				0, y, 0,
 				0, 0, 0,
-				0, y, z,
-				0, 0, 0,
-				0, 0, z,],
+				0, 0, z,]),
 			//top
-			[x, y, 0,
+			r2t([x, y, 0,
 				0, y, 0,
 				0, y, z,
-				x, y, 0,
-				0, y, z,
-				x, y, z,],
+				x, y, z,]),
 			//bottom
-			[0, 0, 0,
-				x, 0, 0,
-				0, 0, z,
+			r2t([0, 0, 0,
 				x, 0, 0,
 				x, 0, z,
-				0, 0, z,],
+				0, 0, z,]),
 		];
 		super(data);
 	}
 	public fillColor({ front, back, right, left, top, bottom }:
 		{ front: number[]; back: number[]; right: number[]; left: number[]; top: number[]; bottom: number[]; }) {
 		this.color = [front, back, right, left, top, bottom].map(c => [c, c, c, c, c, c]).flat(2);
+	}
+}
+
+type latLong = {
+	start: number;
+	end: number;
+	sub: number;
+};
+export class Sphere extends Model {
+	/**
+	 * 球体
+	 * @param radius 半径
+	 * @param lat 维度相关
+	 * @param long 经度相关
+	 */
+	public constructor({ radius = 100, latitude, longitude }: { radius?: number; latitude?: Partial<latLong>; longitude?: Partial<latLong>; } = {}) {
+		const lat = { start: degToRad(90), end: degToRad(-90), sub: 30, ...latitude };
+		const long = { start: 0, end: degToRad(360), sub: 30, ...longitude };
+		const pos = new Array<Array<Array<number>>>();
+		const latStep = (lat.end - lat.start) / lat.sub;
+		const longStep = (long.end - long.start) / long.sub;
+		for (let i = 0; i < lat.sub + 1; i++) {
+			const posFloor = new Array<Array<number>>();
+			for (let ii = 0; ii < long.sub + 1; ii++) {
+				const latRad = lat.start + latStep * i;
+				const longRad = long.start + longStep * ii;
+				const x = radius * Math.cos(latRad) * Math.sin(longRad);
+				const z = radius * Math.cos(latRad) * Math.cos(longRad);
+				const y = radius * Math.sin(latRad);
+				posFloor.push([x, y, z]);
+			}
+			pos.push(posFloor);
+		}
+		const data = new Array<Array<number>>();
+		const p = pos;
+		for (let i = 0; i < p.length - 1; i++) {
+			for (let ii = 0; ii < p[i].length - 1; ii++) {
+				data.push(r2t([
+					...p[i][ii + 1],
+					...p[i][ii],
+					...p[i + 1][ii],
+					...p[i + 1][ii + 1],
+				]));
+			}
+
+		}
+		super(data);
+	}
+	/**
+	 * 填充颜色
+	 * @param color vec4或者vec3 (0 -> 255)
+	 */
+	public fillColor(...color: number[]) {
+		color = color.map(_ => _ / 255);
+		// 一个面2个三角形
+		for (let i = 0; i < this.data.length * 2 * 3; i++) {
+			this.color.push(...color);
+		}
 	}
 }
 
@@ -461,25 +523,25 @@ export const throttle = (func: (...args: any[]) => any, threshold: number = 300)
 
 export type actionsType<V> = ((tDiff: number) => setVParamsType<V>) | { action: (tDiff: number) => setVParamsType<V>, once?: boolean };
 export const createKeyListener = <V>(actions: { [x: string]: actionsType<V> }) => {
-    const keyPressing = new Map<string, boolean>();
-    document.addEventListener('keydown', x => keyPressing.set(x.code, true));
-    document.addEventListener('keyup', x => keyPressing.delete(x.code));
-    let lastT = 0;
-    const loop = (t: number) => {
-        Array.from(keyPressing).filter(([k, v]) => v && actions[k as any]).forEach(([k]) => {
-            const p = actions[k as any];
-            if (typeof p === 'function') {
-                p(t - lastT);
-            } else {
-                const { once, action } = p;
-                action(t - lastT);
-                if (once) { // 只执行一次
-                    keyPressing.delete(k);
-                }
-            }
-        });
-        lastT = t;
-        requestAnimationFrame(loop);
-    };
-    loop(16.6);
+	const keyPressing = new Map<string, boolean>();
+	document.addEventListener('keydown', x => keyPressing.set(x.code, true));
+	document.addEventListener('keyup', x => keyPressing.delete(x.code));
+	let lastT = 0;
+	const loop = (t: number) => {
+		Array.from(keyPressing).filter(([k, v]) => v && actions[k as any]).forEach(([k]) => {
+			const p = actions[k as any];
+			if (typeof p === 'function') {
+				p(t - lastT);
+			} else {
+				const { once, action } = p;
+				action(t - lastT);
+				if (once) { // 只执行一次
+					keyPressing.delete(k);
+				}
+			}
+		});
+		lastT = t;
+		requestAnimationFrame(loop);
+	};
+	loop(16.6);
 };

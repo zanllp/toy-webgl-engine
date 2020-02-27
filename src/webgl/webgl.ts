@@ -1,7 +1,7 @@
 import { mat2, mat3, mat4, vec3, vec4 } from 'gl-matrix';
-import { array2Vec3, Box, createMesh, createProgramInfo, createSetValueFn, degToRad, modifyWindow, mulM3V3, mulV3M3, printMat, resize, Scene, createKeyListener } from './tool';
+import { array2Vec3, Box, createMesh, createProgramInfo, createSetValueFn, degToRad, modifyWindow, mulM3V3, mulV3M3, printMat, resize, Scene, createKeyListener, Sphere } from './tool';
 import { ui } from './ui';
-modifyWindow({ mat3, mulM3V3, printMat, mulV3M3, vec3, vec4, mat2, });
+modifyWindow({ mat3, mulM3V3, printMat, mulV3M3, vec3, vec4, mat2, d2r: degToRad });
 
 
 const vEle = `
@@ -205,17 +205,16 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
         mat4.scale(x, x, [v.scale, v.scale, v.scale]);
     });
 
-    const model = mat4.create();
-    mat4.rotateX(model, model, degToRad(v.rotateX));
-    mat4.rotateY(model, model, degToRad(v.rotateY));
-    mat4.translate(model, model, [-50, -50, -50]);
     box0.setModelMat(x => {
         mat4.translate(x, x, [50, 50, 50]);
-        mat4.mul(x, x, model); // 作用顺序相乘顺序相反，右乘重复部分
+        mat4.rotateX(x, x, degToRad(v.rotateX));
+        mat4.rotateY(x, x, degToRad(v.rotateY));
+        mat4.translate(x, x, [-50, -50, -50]);// 立方体需要矫正位置，因为球的中心点就在后左底三面相加点
     });
-    box1.setModelMat(x => {
-        mat4.translate(x, x, [250, 50, 50]);
-        mat4.mul(x, x, model);
+    sphere.setModelMat(x => {
+        mat4.translate(x, x, [250, 150, 50]); // 球不需要矫正位置，因为球的中心点就在0，0，0
+        mat4.rotateX(x, x, degToRad(v.rotateX));
+        mat4.rotateY(x, x, degToRad(v.rotateY));
     });
     scene.render(gl, ele);
 
@@ -233,6 +232,8 @@ export const webgl = (gl: WebGLRenderingContext) => {
 
 const box0 = new Box();
 box0.fillRandColor();
-const box1 = new Box();
-box1.fillRandColor();
-const scene = new Scene(box0, box1);
+const sub = 100;
+const sphere = new Sphere({ radius: 100, latitude: { sub }, longitude: { sub } });
+//sphere.fillColor(24, 144, 255);
+sphere.fillRandColor();
+const scene = new Scene(box0, sphere);
