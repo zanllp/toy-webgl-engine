@@ -55,22 +55,6 @@ const matCell = (rank: number, s: ArrayLike<number>) =>
 	(row: number, col: number) => {
 		return s[row * rank + col];
 	};
-export const mulM3V3 = (m: mat3, v: number[]) => {
-	const c = matCell(3, m);
-	const x = c(0, 0) * v[0] + c(0, 1) * v[1] + c(0, 2) * v[2];
-	const y = c(1, 0) * v[0] + c(1, 1) * v[1] + c(1, 2) * v[2];
-	const z = c(2, 0) * v[0] + c(2, 1) * v[1] + c(2, 2) * v[2];
-	return [x, y, z];
-};
-
-export const mulV3M3 = (v: number[], m: mat3) => {
-	const c = matCell(3, m);
-	const x = c(0, 0) * v[0] + c(1, 0) * v[1] + c(2, 0) * v[2];
-	const y = c(0, 1) * v[0] + c(1, 1) * v[1] + c(2, 1) * v[2];
-	const z = c(0, 1) * v[0] + c(1, 2) * v[1] + c(2, 2) * v[2];
-	return [x, y, z];
-};
-
 export const modifyWindow = (willAdd: any) => {
 	// tslint:disable-next-line:forin
 	for (const key in willAdd) {
@@ -297,14 +281,24 @@ type Info = {
 export class Model {
 	constructor(data: PosDataType) {
 		this.data = data;
-		this.dataFlat = data.flat();
-		this.normal = calcNormal(this.data);
+		if (Model.memoPosfNormal.has(this.data)) {
+			const d = Model.memoPosfNormal.get(this.data);
+			this.dataFlat = d!.d;
+			this.normal = d!.n;
+		} else {
+
+			this.dataFlat = data.flat();
+			this.normal = calcNormal(this.data);
+			Model.memoPosfNormal.set(this.data, { d: this.dataFlat, n: this.normal });
+		}
 	}
 	public readonly data: PosDataType;
 	public readonly dataFlat: Array<number>;
 	public readonly normal: Array<number>;
 	public modelMat?: mat4;
 	public color = new Array<number>();
+	static memoPosfNormal = new Map<PosDataType, { d: Array<number>, n: Array<number> }>();
+
 	public fillRandColor(factor = 1) {
 		this.color = randColor(this.data, factor);
 	}
@@ -321,7 +315,6 @@ export class Model {
 		}
 		return this.modelMat;
 	}
-
 }
 /**
  * rect2triangle,将一个矩形展开成2个三角形
@@ -341,7 +334,8 @@ const r2t = (rect: Array<number>) => {
 };
 
 export class Box extends Model {
-	public constructor({ x = 100, y = 100, z = 100 }: { x?: number; y?: number; z?: number; } = {}) {
+	public constructor({ x = 100, y = 100, z = 100, color = 'none' }:
+		{ x?: number; y?: number; z?: number; color?: 'none' | 'rand' | { front: number[]; back: number[]; right: number[]; left: number[]; top: number[]; bottom: number[]; } } = {}) {
 		const data = [
 			// front
 			r2t([x, y, z,
@@ -375,6 +369,12 @@ export class Box extends Model {
 				0, 0, z,]),
 		];
 		super(data);
+		if (color === 'rand') {
+			this.fillRandColor();
+		}
+		if (typeof color === 'object') {
+			this.fillColor(color);
+		}
 	}
 	public fillColor({ front, back, right, left, top, bottom }:
 		{ front: number[]; back: number[]; right: number[]; left: number[]; top: number[]; bottom: number[]; }) {
@@ -396,44 +396,51 @@ export class Sphere extends Model {
 	 */
 	public constructor({ radius = 100, latitude, longitude, color = 'none' }:
 		{ radius?: number; latitude?: Partial<latLong>; longitude?: Partial<latLong>; color?: 'none' | 'rand' | Array<number> } = {}) {
-		const lat = { start: degToRad(90), end: degToRad(-90), sub: 30, ...latitude };
-		const long = { start: 0, end: degToRad(360), sub: 30, ...longitude };
-		const pos = new Array<Array<Array<number>>>();
-		const latStep = (lat.end - lat.start) / lat.sub;
-		const longStep = (long.end - long.start) / long.sub;
-		for (let i = 0; i < lat.sub + 1; i++) {
-			const posFloor = new Array<Array<number>>();
-			for (let ii = 0; ii < long.sub + 1; ii++) {
-				const latRad = lat.start + latStep * i;
-				const longRad = long.start + longStep * ii;
-				const x = radius * Math.cos(latRad) * Math.sin(longRad);
-				const z = radius * Math.cos(latRad) * Math.cos(longRad);
-				const y = radius * Math.sin(latRad);
-				posFloor.push([x, y, z]);
+		const str = JSON.stringify({ radius, latitude, longitude });
+		if (Sphere.memoPos.has(str)) {
+			super(Sphere.memoPos.get(str)!);
+		} else {
+			const lat = { start: degToRad(90), end: degToRad(-90), sub: 30, ...latitude };
+			const long = { start: 0, end: degToRad(360), sub: 30, ...longitude };
+			const pos = new Array<Array<Array<number>>>();
+			const latStep = (lat.end - lat.start) / lat.sub;
+			const longStep = (long.end - long.start) / long.sub;
+			for (let i = 0; i < lat.sub + 1; i++) {
+				const posFloor = new Array<Array<number>>();
+				for (let ii = 0; ii < long.sub + 1; ii++) {
+					const latRad = lat.start + latStep * i;
+					const longRad = long.start + longStep * ii;
+					const x = radius * Math.cos(latRad) * Math.sin(longRad);
+					const z = radius * Math.cos(latRad) * Math.cos(longRad);
+					const y = radius * Math.sin(latRad);
+					posFloor.push([x, y, z]);
+				}
+				pos.push(posFloor);
 			}
-			pos.push(posFloor);
-		}
-		const data = new Array<Array<number>>();
-		const p = pos;
-		for (let i = 0; i < p.length - 1; i++) {
-			for (let ii = 0; ii < p[i].length - 1; ii++) {
-				data.push(r2t([
-					...p[i][ii + 1],
-					...p[i][ii],
-					...p[i + 1][ii],
-					...p[i + 1][ii + 1],
-				]));
+			const data = new Array<Array<number>>();
+			const p = pos;
+			for (let i = 0; i < p.length - 1; i++) {
+				for (let ii = 0; ii < p[i].length - 1; ii++) {
+					data.push(r2t([
+						...p[i][ii + 1],
+						...p[i][ii],
+						...p[i + 1][ii],
+						...p[i + 1][ii + 1],
+					]));
+				}
+
 			}
-
+			super(data);
+			Sphere.memoPos.set(str, data);
 		}
-		super(data);
-
 		if (color === 'rand') {
 			this.fillRandColor();
 		} else if (color instanceof Array) {
 			this.fillColor(...color);
 		}
 	}
+
+	static memoPos = new Map<string, PosDataType>();
 	/**
 	 * 填充颜色
 	 * @param color vec4或者vec3 (0 -> 255)
@@ -485,6 +492,32 @@ export class Point extends Model {
 	}
 }
 
+/**
+ * 组合体
+ */
+export class Assembly extends Model {
+	public constructor(...models: Array<Model>) {
+		super([[]]);
+		for (const i of models) {
+			this.color.push(...i.color);
+			if (i.modelMat) {
+				for (let ii = 0; ii < i.normal.length; ii += 3) {
+					const pos = vec3.fromValues(i.dataFlat[ii], i.dataFlat[ii + 1], i.dataFlat[ii + 2]);
+					this.dataFlat.push(...Array.from(vec3.transformMat4(vec3.create(), pos, i.modelMat)));
+					const normal = vec3.fromValues(i.normal[ii], i.normal[ii + 1], i.normal[ii + 2]);
+					this.normal.push(...Array.from(vec3.transformMat4(vec3.create(), normal, i.modelMat)));
+				}
+			} else {
+				this.dataFlat.push(...i.dataFlat);
+				this.normal.push(...i.normal);
+			}
+		}
+	}
+	public readonly dataFlat = new Array<number>();
+	public readonly normal = new Array<number>();
+	public readonly color = new Array<number>();
+}
+
 export class Scene<T extends Info> {
 	public constructor(...models: Array<Model>) {
 		this.models.push(...models);
@@ -496,17 +529,20 @@ export class Scene<T extends Info> {
 		info.u_proj = this.projectionMat;
 		info.u_view = this.viewMat;
 		this.models.forEach(x => {
-			if (x.modelMat && info.src['u_model']) {
+			if (x.modelMat && ('u_model' in info.src)) {
 				info.u_model = x.modelMat;
+			} else {
+				if ('u_model' in info.src) {
+					info.u_model = mat4.create();
+				}
 			}
-			if (info.src['a_color']) { // 查看是否定义了这个attribute，比info.a_color速度更快
+			if ('a_color' in info.src) { // 查看是否定义了这个attribute，比info.a_color速度更快
 				info.a_color!.set(x.color, x);
 			}
-			if (info.src['a_normal']) {
+			if ('a_normal' in info.src) {
 				info.a_normal!.set(x.normal, x);
 			}
 			info.a_pos.set(x.dataFlat, x);
-
 			x.render(gl);
 		});
 	}

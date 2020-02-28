@@ -1,7 +1,6 @@
 import React from 'react';
 import './App.scss';
 import { webgl } from './webgl/webgl';
-
 export class App extends React.PureComponent {
 	ele = React.createRef<HTMLCanvasElement>();
 
@@ -13,6 +12,7 @@ export class App extends React.PureComponent {
 			return;
 		}
 		webgl(gl);
+		//alert('This is a normal message');
 	}
 
 	render() {

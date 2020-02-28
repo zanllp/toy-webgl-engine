@@ -84,45 +84,9 @@
 
 
 </style>
-<script id="vert-src" type="not-js">
-
-    attribute vec2 a_position;
-    attribute vec2 a_texCoord;
-    uniform vec2 u_resolution;
-    uniform vec2 u_imgSize;
-    varying vec2 v_texCoord;
-    uniform vec2 u_rot;
-
-    void main() {
-      // 从像素坐标转换到 0.0 到 1.0
-      vec2 zeroToOne = a_position / u_resolution;
-      // 再把 0->1 转换 0->2
-      vec2 zeroToTwo = zeroToOne * 2.0;
-      // 把 0->2 转换到 -1->+1 (裁剪空间)
-      vec2 clipSpace = zeroToTwo - 1.0;
-      vec2 pos = clipSpace * vec2(1, -1);
-      gl_Position = vec4(
-      pos //vec2(pos.x*u_rot.y+pos.y*u_rot.x, pos.y*u_rot.y-pos.x*u_rot.x)
-      , 0, 1);
-      float scale = 1.0;//u_imgSize.y / u_resolution.y;
-      v_texCoord = a_texCoord * vec2(scale,scale);
-    }
-</script>
-<script id="frag-src" type="not-js">
-
-    precision mediump float; // 默认精度
-    uniform sampler2D u_image;
-    // 从顶点着色器传入的纹理坐标
-    varying vec2 v_texCoord;
-
-    void main() {
-        // 在纹理上寻找对应颜色值
-        gl_FragColor = texture2D(u_image, v_texCoord);
-    }
-</script>
-
 <body>
   <noscript>You need to enable JavaScript to run this app.</noscript>
+  <div id="hint" style="font-size: 3em;text-align: center;line-height: 32px;margin: 16px 0;">正在生成5000个200三角面的球体，且会进行组合，耐心等待</div>
   <div id="ui-container">
   </div>
   <div id="root"></div>

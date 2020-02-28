@@ -1,7 +1,8 @@
 import { mat2, mat3, mat4, vec3, vec4 } from 'gl-matrix';
-import { array2Vec3, Box, createProgramInfo, createSetValueFn, degToRad, modifyWindow, mulM3V3, mulV3M3, printMat, resize, Scene, createKeyListener, Sphere, Mesh, Point } from './tool';
+import { array2Vec3, Box, createProgramInfo, createSetValueFn, degToRad, modifyWindow, printMat, resize, Scene, createKeyListener, Sphere, Mesh, Point, Assembly } from './tool';
 import { ui } from './ui';
-modifyWindow({ mat3, mulM3V3, printMat, mulV3M3, vec3, vec4, mat2, d2r: degToRad });
+import color from 'color-name';
+modifyWindow({ mat3, printMat, vec3, vec4, mat2, d2r: degToRad });
 
 
 const vEle = `
@@ -119,6 +120,26 @@ const createInfo = (gl: WebGLRenderingContext) => ({
         }
     }),
 });
+const createModel = () => {
+    const box0 = new Box({ color: 'rand' });
+    const sub = 10;
+    const spheres = new Array<Sphere>();
+    for (let i = 0; i < 5000; i++) {
+        const s = new Sphere({ radius: 10, latitude: { sub }, longitude: { sub }, color: 'rand' });
+        s.setModelMat(x => {
+            mat4.translate(x, x, [-500 + 3000 * Math.random(), 500 * Math.random(), -500 + 3000 * Math.random()]); // 球不需要矫正位置，因为球的中心点就在0，0，0
+        });
+        spheres.push(s);
+    }
+    //const largeSphere = new Sphere({ radius: 1000, latitude: { sub:2500 }, longitude: { sub:2500 }, color: 'rand' }); // 1250w面
+
+    const scene = new Scene(box0, new Assembly(...spheres));
+    const mesh = new Mesh({ is3d: true, range: 8000, num: 100 });
+    const point = new Point(70, 30, 120);
+    const scene2 = new Scene(mesh, point);
+    return { scene, scene2, box0 };
+};
+type modelType = ReturnType<typeof createModel>;
 type infoT = ReturnType<typeof createInfo>;
 
 export const start = (gl: WebGLRenderingContext) => {
@@ -126,11 +147,6 @@ export const start = (gl: WebGLRenderingContext) => {
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     const info = createInfo(gl);
     const setV = createSetValueFn(gl, info, render, state);
-    const e = () => {
-        render(gl, info);
-        requestAnimationFrame(e);
-    };
-    e();
     render(gl, info);
     document.addEventListener('wheel', x => {
         const direction = x.deltaY / Math.abs(x.deltaY);
@@ -180,7 +196,8 @@ const state = {
         rotateY: 0, rotateX: 0,
         shininess: 50,
     },
-    clicked: false
+    model: null as modelType | null,
+    clicked: false,
 };
 
 
@@ -191,6 +208,7 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     const { ele, plane } = info;
+    const { scene, scene2, box0 } = state.model as NonNullable<modelType>;
     gl.useProgram(ele.program);
     ele.u_shininess = v.shininess;
     const projection = scene.setProjectionMat(projection => {
@@ -198,7 +216,7 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
         const fieldOfView = degToRad(45);
         const aspect = gl.canvas.width / gl.canvas.height;
         const zNear = 1;
-        const zFar = 2000;
+        const zFar = 4000;
         mat4.perspective(projection, fieldOfView, aspect, zNear, zFar); // 投影
     });
     const viewPos = [v.x, v.y, v.z];
@@ -216,11 +234,7 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
         mat4.rotateY(x, x, degToRad(v.rotateY));
         mat4.translate(x, x, [-50, -50, -50]);// 立方体需要矫正位置，因为球的中心点就在后左底三面相交点
     });
-    spheres.forEach(y => {
-        y.setModelMat(x => {
-            mat4.translate(x, x, [-500 + 1000 * Math.random(), 500 * Math.random(), -500 + 1000 * Math.random()]); // 球不需要矫正位置，因为球的中心点就在0，0，0
-        });
-    });
+
     //largeSphere.setModelMat(x => {
     //    mat4.translate(x, x, [250, 150, 50]); // 球不需要矫正位置，因为球的中心点就在0，0，0
     //    mat4.rotateX(x, x, degToRad(v.rotateX));
@@ -233,22 +247,11 @@ const render = (gl: WebGLRenderingContext, info: infoT, v = state.value) => {
     scene2.render(gl, plane);
 };
 export const webgl = (gl: WebGLRenderingContext) => {
-   setTimeout(()=> start(gl));
+    setTimeout(() => {
+        state.model = createModel();
+        start(gl);
+        document.querySelector('#hint')?.remove();
+    });
 };
 
 
-const box0 = new Box();
-box0.fillRandColor();
-const sub = 10;
-const spheres = new Array<Sphere>();
-for (let i = 0; i < 2000; i++) {
-    const s = new Sphere({ radius: 10, latitude: { sub }, longitude: { sub } });
-    s.fillRandColor();
-    spheres.push(s);
-}
-//const largeSphere = new Sphere({ radius: 1000, latitude: { sub:2500 }, longitude: { sub:2500 }, color: 'rand' }); // 1250w面
-
-const scene = new Scene(box0, ...spheres);
-const mesh = new Mesh({ is3d: true, range: 8000, num: 100 });
-const point = new Point(70, 30, 120);
-const scene2 = new Scene(mesh, point);
