@@ -240,9 +240,6 @@ export const createSetValueFn = <T, V, U extends { value: V }>(gl: WebGLRenderin
 export const array2Vec3 = (_: Array<number>) => vec3.fromValues(_[0], _[1], _[2]);
 
 type PosDataType = number[][];
-export const flatPos = (data: PosDataType) => {
-	return data.flat(1);
-};
 
 export const randColor = (posData: PosDataType, factor = 1) => {
 	const colorData = posData.map(() => {
@@ -286,7 +283,6 @@ export class Model {
 			this.dataFlat = d!.d;
 			this.normal = d!.n;
 		} else {
-
 			this.dataFlat = data.flat();
 			this.normal = calcNormal(this.data);
 			Model.memoPosfNormal.set(this.data, { d: this.dataFlat, n: this.normal });
@@ -295,7 +291,9 @@ export class Model {
 	public readonly data: PosDataType;
 	public readonly dataFlat: Array<number>;
 	public readonly normal: Array<number>;
-	public modelMat?: mat4;
+	public readonly children = new Set<Model>();
+	public readonly matrixStack = new Array<mat4>();
+	public modelMat = mat4.create();
 	public color = new Array<number>();
 	static memoPosfNormal = new Map<PosDataType, { d: Array<number>, n: Array<number> }>();
 
@@ -305,15 +303,30 @@ export class Model {
 	public render(gl: WebGLRenderingContext) {
 		gl.drawArrays(gl.TRIANGLES, 0, this.dataFlat.length / 3);
 	}
-	public setModelMat(fn: (_: mat4) => mat4 | void) {
-		const mat = mat4.create();
-		const res = fn(mat);
-		if (res) {
-			this.modelMat = res;
+	public setModelMat(fn: ((_: mat4) => mat4 | void) | mat4) {
+		if (typeof fn === 'function') {
+			const mat = mat4.create();
+			const res = fn(mat);
+			if (res) {
+				this.modelMat = res;
+			} else {
+				this.modelMat = mat;
+			}
 		} else {
-			this.modelMat = mat;
+			this.modelMat = fn;
 		}
 		return this.modelMat;
+	}
+	public pushMat(mat: mat4) {
+		this.matrixStack.push(mat);
+		mat4.mul(this.modelMat, this.modelMat, mat);
+	}
+	public popMat() {
+		const mat = this.matrixStack.pop();
+		if (mat) {
+			mat4.invert(mat, mat);
+			mat4.mul(this.modelMat, this.modelMat, mat);
+		}
 	}
 }
 /**
@@ -336,39 +349,46 @@ const r2t = (rect: Array<number>) => {
 export class Box extends Model {
 	public constructor({ x = 100, y = 100, z = 100, color = 'none' }:
 		{ x?: number; y?: number; z?: number; color?: 'none' | 'rand' | { front: number[]; back: number[]; right: number[]; left: number[]; top: number[]; bottom: number[]; } } = {}) {
-		const data = [
-			// front
-			r2t([x, y, z,
-				0, y, z,
-				0, 0, z,
-				x, 0, z,]),
-			// back
-			r2t([x, y, 0,
-				x, 0, 0,
-				0, 0, 0,
-				0, y, 0,]),
-			// right
-			r2t([x, y, z,
-				x, 0, z,
-				x, 0, 0,
-				x, y, 0]),
-			//left
-			r2t([0, y, z,
-				0, y, 0,
-				0, 0, 0,
-				0, 0, z,]),
-			//top
-			r2t([x, y, 0,
-				0, y, 0,
-				0, y, z,
-				x, y, z,]),
-			//bottom
-			r2t([0, 0, 0,
-				x, 0, 0,
-				x, 0, z,
-				0, 0, z,]),
-		];
-		super(data);
+		const str = JSON.stringify({ x, y, z });
+		if (Box.memoPos.has(str)) {
+			super(Box.memoPos.get(str)!);
+		} else {
+			const data = [
+				// front
+				r2t([x, y, z,
+					0, y, z,
+					0, 0, z,
+					x, 0, z,]),
+				// back
+				r2t([x, y, 0,
+					x, 0, 0,
+					0, 0, 0,
+					0, y, 0,]),
+				// right
+				r2t([x, y, z,
+					x, 0, z,
+					x, 0, 0,
+					x, y, 0]),
+				//left
+				r2t([0, y, z,
+					0, y, 0,
+					0, 0, 0,
+					0, 0, z,]),
+				//top
+				r2t([x, y, 0,
+					0, y, 0,
+					0, y, z,
+					x, y, z,]),
+				//bottom
+				r2t([0, 0, 0,
+					x, 0, 0,
+					x, 0, z,
+					0, 0, z,]),
+			];
+			super(data);
+			Sphere.memoPos.set(str, data);
+		}
+
 		if (color === 'rand') {
 			this.fillRandColor();
 		}
@@ -376,6 +396,7 @@ export class Box extends Model {
 			this.fillColor(color);
 		}
 	}
+	static memoPos = new Map<string, PosDataType>();
 	public fillColor({ front, back, right, left, top, bottom }:
 		{ front: number[]; back: number[]; right: number[]; left: number[]; top: number[]; bottom: number[]; }) {
 		this.color = [front, back, right, left, top, bottom].map(c => [c, c, c, c, c, c]).flat(2);
@@ -499,7 +520,7 @@ export class Assembly extends Model {
 	public constructor(...models: Array<Model>) {
 		super([[]]);
 		for (const i of models) {
-			this.color.push(...i.color);
+			this.color = [...this.color, ...i.color];
 			if (i.modelMat) {
 				for (let ii = 0; ii < i.normal.length; ii += 3) {
 					const pos = vec3.fromValues(i.dataFlat[ii], i.dataFlat[ii + 1], i.dataFlat[ii + 2]);
@@ -525,16 +546,33 @@ export class Scene<T extends Info> {
 	private projectionMat = mat4.create();
 	private viewMat = mat4.create();
 	private models = new Array<Model>();
-	public render(gl: WebGLRenderingContext, info: T) {
-		info.u_proj = this.projectionMat;
-		info.u_view = this.viewMat;
-		this.models.forEach(x => {
-			if (x.modelMat && ('u_model' in info.src)) {
-				info.u_model = x.modelMat;
-			} else {
-				if ('u_model' in info.src) {
-					info.u_model = mat4.create();
+	public render(gl: WebGLRenderingContext, info: T, next?: { modelMat: mat4, child: Model }) {
+		if (!next) {
+			info.u_proj = this.projectionMat;
+			info.u_view = this.viewMat;
+			this.models.forEach(x => {
+				if (x.modelMat && ('u_model' in info.src)) {
+					info.u_model = x.modelMat;
+				} else {
+					if ('u_model' in info.src) {
+						info.u_model = mat4.create();
+					}
 				}
+				if ('a_color' in info.src) { // 查看是否定义了这个attribute，比info.a_color速度更快
+					info.a_color!.set(x.color, x);
+				}
+				if ('a_normal' in info.src) {
+					info.a_normal!.set(x.normal, x);
+				}
+				info.a_pos.set(x.dataFlat, x);
+				x.render(gl);
+				x.children.forEach(y => this.render(gl, info, { modelMat: x.modelMat || mat4.create(), child: y }));
+			});
+		} else {
+			const x = next.child;
+			const nextModelMat = mat4.mul(mat4.create(), next.modelMat, x.modelMat || mat4.create());
+			if (x.modelMat) {
+				info.u_model = nextModelMat;
 			}
 			if ('a_color' in info.src) { // 查看是否定义了这个attribute，比info.a_color速度更快
 				info.a_color!.set(x.color, x);
@@ -544,7 +582,8 @@ export class Scene<T extends Info> {
 			}
 			info.a_pos.set(x.dataFlat, x);
 			x.render(gl);
-		});
+			x.children.forEach(y => this.render(gl, info, { modelMat: nextModelMat, child: y }));
+		}
 	}
 	public addModel(...model: Model[]) {
 		this.models.push(...model);
