@@ -208,7 +208,7 @@ export const createProgramInfo = <A extends constraintNull, U extends constraint
 
 export type setVParamsType<V> = (Partial<V> | ((s: V) => Partial<V>) | { action: 'incr' | 'decr', key: keyof V, value: number });
 export const createSetValueFn = <T, V, U extends { value: V }>(gl: WebGLRenderingContext, programInfo: T, render: (gl: WebGLRenderingContext, info: T, v?: V) => any, state: U) => {
-	const throttleRender = throttle((s: U) => render(gl, programInfo, s.value), 1000 / 60);
+	const throttleRender = throttle((s: U) => render(gl, programInfo, s.value), 10);
 	return (s: setVParamsType<V>) => {
 		let { value } = state;
 		if (typeof s === 'object') {
@@ -233,6 +233,7 @@ export const createSetValueFn = <T, V, U extends { value: V }>(gl: WebGLRenderin
 		}
 		state.value = value;
 		throttleRender(state);
+		//render(gl, programInfo, state.value)
 		return value;
 	};
 };
@@ -296,7 +297,9 @@ export class Model {
 	public modelMat = mat4.create();
 	public color = new Array<number>();
 	static memoPosfNormal = new Map<PosDataType, { d: Array<number>, n: Array<number> }>();
-
+	get childArray() {
+		return Array.from(this.children);
+	}
 	public fillRandColor(factor = 1) {
 		this.color = randColor(this.data, factor);
 	}
@@ -449,7 +452,6 @@ export class Sphere extends Model {
 						...p[i + 1][ii + 1],
 					]));
 				}
-
 			}
 			super(data);
 			Sphere.memoPos.set(str, data);
@@ -521,7 +523,7 @@ export class Assembly extends Model {
 		super([[]]);
 		for (const i of models) {
 			this.color = [...this.color, ...i.color];
-			if (i.modelMat) {
+			if (!mat4.equals(i.modelMat, mat4.create())) {
 				for (let ii = 0; ii < i.normal.length; ii += 3) {
 					const pos = vec3.fromValues(i.dataFlat[ii], i.dataFlat[ii + 1], i.dataFlat[ii + 2]);
 					this.dataFlat.push(...Array.from(vec3.transformMat4(vec3.create(), pos, i.modelMat)));
@@ -543,20 +545,16 @@ export class Scene<T extends Info> {
 	public constructor(...models: Array<Model>) {
 		this.models.push(...models);
 	}
-	private projectionMat = mat4.create();
-	private viewMat = mat4.create();
-	private models = new Array<Model>();
+	public projectionMat = mat4.create();
+	public viewMat = mat4.create();
+	public models = new Array<Model>();
 	public render(gl: WebGLRenderingContext, info: T, next?: { modelMat: mat4, child: Model }) {
-		if (!next) {
+		if (next === undefined) {
 			info.u_proj = this.projectionMat;
 			info.u_view = this.viewMat;
 			this.models.forEach(x => {
-				if (x.modelMat && ('u_model' in info.src)) {
+				if ('u_model' in info.src) {
 					info.u_model = x.modelMat;
-				} else {
-					if ('u_model' in info.src) {
-						info.u_model = mat4.create();
-					}
 				}
 				if ('a_color' in info.src) { // 查看是否定义了这个attribute，比info.a_color速度更快
 					info.a_color!.set(x.color, x);
@@ -642,7 +640,7 @@ export const throttle = (func: (...args: any[]) => any, threshold: number = 300)
 	return (...args: any[]) => {
 		if (lastT === 0 || Date.now() - lastT > threshold) {
 			lastT = Date.now();
-			func(...args);
+			return func(...args);
 		}
 	};
 };
@@ -653,8 +651,9 @@ export const createKeyListener = <V>(actions: { [x: string]: actionsType<V> }) =
 	const keyPressing = new Set<string>();
 	document.addEventListener('keydown', x => keyPressing.add(x.code));
 	document.addEventListener('keyup', x => keyPressing.delete(x.code));
-	let lastT = 0;
+	let lastT = Date.now();
 	const loop = (t: number) => {
+		requestAnimationFrame(loop);
 		keyPressing.forEach((k) => {
 			const p = actions[k as any];
 			if (p) {
@@ -670,7 +669,19 @@ export const createKeyListener = <V>(actions: { [x: string]: actionsType<V> }) =
 			}
 		});
 		lastT = t;
-		requestAnimationFrame(loop);
 	};
-	loop(16.6);
+	loop(Date.now());
 };
+
+export class GL<T extends { [x: string]: Info }, S> {
+	gl!: WebGLRenderingContext;
+	state!: Readonly<S>;
+	info!: T;
+	render(): Model | Model[]|void {
+		throw new Error('Method not implemented.');
+	}
+	setState(s: setVParamsType<S>): S {
+		throw new Error('Method not implemented.');
+	}
+
+}

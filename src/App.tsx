@@ -1,9 +1,8 @@
 import React from 'react';
 import './App.scss';
 import { webgl } from './webgl/webgl';
-export class App extends React.PureComponent {
+export class App extends React.Component {
 	ele = React.createRef<HTMLCanvasElement>();
-
 	componentDidMount() {
 		const canvas = this.ele.current!;
 		const gl = canvas.getContext('webgl');
