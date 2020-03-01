@@ -138,26 +138,36 @@ type attrResType = { set(data: Array<number>, id?: any): void, get(id: any): Arr
 type attrType<A> = { [p in keyof A]: attrResType };
 const programInfoFromKey = <A extends constraintNull, U extends constraintAll>({ gl, program, attribute, uniform }:
 	{ gl: WebGLRenderingContext; program: WebGLProgram; attribute: A; uniform: U; }) => {
-	gl.useProgram(program);
+	const switchProgram = () => {
+		if (gl.getParameter(gl.CURRENT_PROGRAM) !== program) {
+			gl.useProgram(program);
+		}
+	};
+	switchProgram();
 	const loc = {} as { [p in keyof A]: number } & { [p in keyof U]: WebGLUniformLocation | null };
 	const res = {} as { program: WebGLProgram; loc: typeof loc; src: A & U } & unifType<U> & attrType<A>; // 如果定义在一个即将展开的对象上,setget生效
 	Object.keys(attribute).forEach(x => {
 		(loc as any)[x] = gl.getAttribLocation(program, x);
 		const size = attribute[x];
-		const idRec = new Map<any, { d: Array<number>; b: WebGLBuffer | null }>();
+		const idRec = new Map<any, { data: Array<number>; buf: WebGLBuffer | null }>();
 		(res as any)[x] = {
 			get(id: any) {
-				return idRec.get(id) && idRec.get(id)!.d;
+				const res = idRec.get(id);
+				if (res) {
+					return res.data;
+				}
 			},
 			set(data: any, id?: any) {
+				switchProgram();
 				if (id === undefined) {
 					BufferData.write(gl, data, size, loc[x]);
 				} else {
-					if (idRec.get(id) && idRec.get(id)!.d === data) { // 可以重用数据
-						BufferData.reuse(gl, idRec.get(id)!.b, size, loc[x]);
+					const rec = idRec.get(id);
+					if (rec !== undefined && rec.data === data) { // 可以重用数据
+						BufferData.reuse(gl, rec.buf, size, loc[x]);
 					} else {
-						const b = BufferData.write(gl, data, size, loc[x]);
-						idRec.set(id, { d: data, b });
+						const buf = BufferData.write(gl, data, size, loc[x]);
+						idRec.set(id, { data, buf });
 					}
 				}
 			}
@@ -168,6 +178,7 @@ const programInfoFromKey = <A extends constraintNull, U extends constraintAll>({
 		const eset = createSetUniformFn(gl, uloc);
 		Object.defineProperty(res, x, {
 			set(_: any) {
+				switchProgram();
 				eset(_);
 			},
 			get() {
@@ -200,41 +211,51 @@ export type programInfoParamsT<A, U> = {
 	}
 };
 
-
+/**
+ * 创建程序信息
+ * @param param0 
+ */
 export const createProgramInfo = <A extends constraintNull, U extends constraintAll>({ gl, location, source }: programInfoParamsT<A, U>) => {
 	const program = createProgram(gl, source.vertex, source.fragment);
 	return programInfoFromKey({ gl, program, attribute: location.attribute, uniform: location.uniform });
 };
 
-export type setVParamsType<V> = (Partial<V> | ((s: V) => Partial<V>) | { action: 'incr' | 'decr', key: keyof V, value: number });
-export const createSetValueFn = <T, V, U extends { value: V }>(gl: WebGLRenderingContext, programInfo: T, render: (gl: WebGLRenderingContext, info: T, v?: V) => any, state: U) => {
-	const throttleRender = throttle((s: U) => render(gl, programInfo, s.value), 10);
-	return (s: setVParamsType<V>) => {
-		let { value } = state;
-		if (typeof s === 'object') {
-			if ('action' in s) {
-				const v = value as any;
-				if (typeof v[s.key] !== 'number') {
-					throw new Error(`key:${s.key} 不能作用于value:${value},type:${typeof v[s.key]}`);
+export type setStateType<V> = (Partial<V> | ((s: V) => Partial<V>) | { action: 'incr' | 'decr', key: keyof V, value: number });
+/**
+ * 创建设置状态函数
+ * @param gl 
+ * @param programInfo 程序信息，渲染器的参数 render(gl, programInfo, s.state) 
+ * @param render 渲染函数 
+ * @param s 包含state键的对象，用来作为状态的唯一源，和渲染器的参数
+ */
+export const createSetStateFn = <T, V, U extends { state: V }>(gl: WebGLRenderingContext, programInfo: T, render: (gl: WebGLRenderingContext, info: T, v?: V) => any, s: U) => {
+	const throttleRender = throttle((s: U) => render(gl, programInfo, s.state), 12);
+	return (set: setStateType<V>) => {
+		let { state } = s;
+		if (typeof set === 'object') {
+			if ('action' in set) {
+				const v = state as any;
+				if (typeof v[set.key] !== 'number') {
+					throw new Error(`key:${set.key} 不能作用于value:${v},type:${typeof v[set.key]}`);
 				}
-				switch (s.action) {
+				switch (set.action) {
 					case 'incr':
-						v[s.key] += s.value;
+						v[set.key] += set.value;
 						break;
 					case 'decr':
-						v[s.key] -= s.value;
+						v[set.key] -= set.value;
 						break;
 				}
 			} else {
-				value = { ...value, ...s };
+				state = { ...state, ...s };
 			}
 		} else {
-			value = { ...value, ...s(value) };
+			state = { ...state, ...set(state) };
 		}
-		state.value = value;
+		s.state = state;
 		throttleRender(state);
 		//render(gl, programInfo, state.value)
-		return value;
+		return state;
 	};
 };
 
@@ -274,8 +295,10 @@ type Info = {
 	u_model?: mat4;
 	u_proj: mat4;
 	u_view: mat4;
-	src: any
+	src: any,
+	program: WebGLProgram;
 };
+
 export class Model {
 	constructor(data: PosDataType) {
 		this.data = data;
@@ -348,10 +371,11 @@ const r2t = (rect: Array<number>) => {
 	}
 	return rect;
 };
-
+export type cubeColorType = { front: number[]; back: number[]; right: number[]; left: number[]; top: number[]; bottom: number[]; };
 export class Box extends Model {
-	public constructor({ x = 100, y = 100, z = 100, color = 'none' }:
-		{ x?: number; y?: number; z?: number; color?: 'none' | 'rand' | { front: number[]; back: number[]; right: number[]; left: number[]; top: number[]; bottom: number[]; } } = {}) {
+	public constructor({ x = 100, y = 100, z = 100, color = 'none' }: {
+		x?: number; y?: number; z?: number; color?: 'none' | 'rand' | cubeColorType
+	} = {}) {
 		const str = JSON.stringify({ x, y, z });
 		if (Box.memoPos.has(str)) {
 			super(Box.memoPos.get(str)!);
@@ -400,8 +424,7 @@ export class Box extends Model {
 		}
 	}
 	static memoPos = new Map<string, PosDataType>();
-	public fillColor({ front, back, right, left, top, bottom }:
-		{ front: number[]; back: number[]; right: number[]; left: number[]; top: number[]; bottom: number[]; }) {
+	public fillColor({ front, back, right, left, top, bottom }: cubeColorType) {
 		this.color = [front, back, right, left, top, bottom].map(c => [c, c, c, c, c, c]).flat(2);
 	}
 }
@@ -520,7 +543,7 @@ export class Point extends Model {
  */
 export class Assembly extends Model {
 	public constructor(...models: Array<Model>) {
-		super([[]]);
+		super([]);
 		for (const i of models) {
 			this.color = [...this.color, ...i.color];
 			if (!mat4.equals(i.modelMat, mat4.create())) {
@@ -542,13 +565,18 @@ export class Assembly extends Model {
 }
 
 export class Scene<T extends Info> {
-	public constructor(...models: Array<Model>) {
+	public constructor(gl: WebGLRenderingContext, info: T, ...models: Array<Model>) {
 		this.models.push(...models);
+		this.gl = gl;
+		this.info = info;
 	}
+	public gl: WebGLRenderingContext;
+	public info: T;
 	public projectionMat = mat4.create();
 	public viewMat = mat4.create();
 	public models = new Array<Model>();
-	public render(gl: WebGLRenderingContext, info: T, next?: { modelMat: mat4, child: Model }) {
+	public render(next?: { modelMat: mat4, child: Model }) {
+		const { info, gl } = this;
 		if (next === undefined) {
 			info.u_proj = this.projectionMat;
 			info.u_view = this.viewMat;
@@ -564,7 +592,7 @@ export class Scene<T extends Info> {
 				}
 				info.a_pos.set(x.dataFlat, x);
 				x.render(gl);
-				x.children.forEach(y => this.render(gl, info, { modelMat: x.modelMat || mat4.create(), child: y }));
+				x.children.forEach(y => this.render({ modelMat: x.modelMat || mat4.create(), child: y }));
 			});
 		} else {
 			const x = next.child;
@@ -580,7 +608,7 @@ export class Scene<T extends Info> {
 			}
 			info.a_pos.set(x.dataFlat, x);
 			x.render(gl);
-			x.children.forEach(y => this.render(gl, info, { modelMat: nextModelMat, child: y }));
+			x.children.forEach(y => this.render({ modelMat: nextModelMat, child: y }));
 		}
 	}
 	public addModel(...model: Model[]) {
@@ -646,7 +674,7 @@ export const throttle = (func: (...args: any[]) => any, threshold: number = 300)
 };
 
 
-export type actionsType<V> = ((tDiff: number) => setVParamsType<V>) | { action: (tDiff: number) => setVParamsType<V>, once?: boolean };
+export type actionsType<V> = ((tDiff: number) => setStateType<V>) | { action: (tDiff: number) => setStateType<V>, once?: boolean };
 export const createKeyListener = <V>(actions: { [x: string]: actionsType<V> }) => {
 	const keyPressing = new Set<string>();
 	document.addEventListener('keydown', x => keyPressing.add(x.code));
@@ -674,14 +702,37 @@ export const createKeyListener = <V>(actions: { [x: string]: actionsType<V> }) =
 };
 
 export class GL<T extends { [x: string]: Info }, S> {
-	gl!: WebGLRenderingContext;
-	state!: Readonly<S>;
-	info!: T;
-	render(): Model | Model[]|void {
+	constructor(gl: WebGLRenderingContext, info: T, state: S) {
+		this.gl = gl;
+		this.info = info;
+		this.state = state;
+		this.setState = createSetStateFn(gl, info, this.renderFrame.bind(this), this);
+		resize(gl.canvas);
+		gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+	}
+	gl: WebGLRenderingContext;
+	state: Readonly<S>;
+	info: T;
+	render(): Scene<Info>[] | void {
 		throw new Error('Method not implemented.');
 	}
-	setState(s: setVParamsType<S>): S {
+	setState(s: setStateType<S>): S {
 		throw new Error('Method not implemented.');
 	}
-
+	clear() {
+		const { gl } = this;
+		gl.enable(gl.DEPTH_TEST);
+		gl.enable(gl.CULL_FACE);
+		gl.clearColor(0, 0, 0, 0);
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+	}
+	public renderFrame() {
+		this.clear();
+		const res = this.render();
+		if (res) {
+			res.forEach(x => {
+				x.render();
+			});
+		}
+	}
 }
