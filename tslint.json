@@ -5,17 +5,24 @@
     ],
     "jsRules": {},
     "rules": {
-        "typedef":false,
-        "object-literal-sort-keys":false,
-        "ordered-imports":false,
-        "max-line-length": [true, 200],
+        "typedef": false,
+        "object-literal-sort-keys": false,
+        "ordered-imports": false,
+        "max-line-length": [
+            true,
+            200
+        ],
         "arrow-parens": false,
-        "quotemark": [true, "single", "jsx-double"],
-        "no-console":false,
-        "array-type":false,
-        "curly":true,
-        "no-class-assign":false,
-        "semicolon":true,
+        "quotemark": [
+            true,
+            "single",
+            "jsx-double"
+        ],
+        "no-console": false,
+        "array-type": false,
+        "curly": true,
+        "no-class-assign": false,
+        "semicolon": true,
         "member-ordering": [
             true,
             {
@@ -25,7 +32,7 @@
                     "private-constructor",
                     "public-instance-field",
                     "protected-instance-field",
-                    "private-instance-field", 
+                    "private-instance-field",
                     "public-static-field",
                     "protected-static-field",
                     "private-static-field",

@@ -15,10 +15,12 @@ export function resize(canvas: any) {
 		canvas.height = displayHeight;
 	}
 }
-export const setCSS = (style: CSSProperties, ele: HTMLElement) => {
-    Object.entries(style).forEach(([k, v]) => {
-        (ele.style as any)[k] = v;
-    });
+export const setCSS = (style: CSSProperties, ...ele: HTMLElement[]) => {
+	ele.forEach(el => {
+		Object.entries(style).forEach(([k, v]) => {
+			(el.style as any)[k] = v;
+		});
+	});
 };
 
 export function createShader({ gl, type, source }: { gl: WebGLRenderingContext; type: number; source: string; }) {
@@ -31,7 +33,7 @@ export function createShader({ gl, type, source }: { gl: WebGLRenderingContext; 
 	var success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
 	if (!success) {
 		const msg = gl.getShaderInfoLog(shader);
-		console.log(msg);
+		console.error(msg);
 		gl.deleteShader(shader);
 		throw new Error(`'createShader !success' ${msg}`);
 	}
@@ -51,7 +53,7 @@ export function createProgram(gl: WebGLRenderingContext, vertexSrc: string, frag
 	var success = gl.getProgramParameter(program, gl.LINK_STATUS);
 	if (!success) {
 		const msg = gl.getProgramInfoLog(program);
-		console.log(msg);
+		console.error(msg);
 		gl.deleteProgram(program);
 		throw new Error(`createProgram( !success ${msg}`);
 	}
@@ -235,7 +237,7 @@ export type setStateType<V> = (Partial<V> | ((s: V) => Partial<V>) | { action: '
  * @param s 包含state键的对象，用来作为状态的唯一源，和渲染器的参数
  */
 export const createSetStateFn = <T, V, U extends { state: V }>(gl: WebGLRenderingContext, programInfo: T, render: (gl: WebGLRenderingContext, info: T, v?: V) => any, s: U) => {
-	const throttleRender = throttle((s: U) => render(gl, programInfo, s.state), 12);
+	//const throttleRender = throttle((s: U) => render(gl, programInfo, s.state), 12);
 	return (set: setStateType<V>) => {
 		let { state } = s;
 		if (typeof set === 'object') {
@@ -283,7 +285,7 @@ export const randColor = (posData: PosDataType, factor = 1) => {
 /**
  * 计算表面法线
  */
-export const calcNormal = (posData: PosDataType) => {
+export const calcNormal = (posData: PosDataType, count: 4 | 6 = 6) => {
 	return posData.map((x) => {
 		const e = [[x[0], x[1], x[2]], [x[3], x[4], x[5]], [x[6], x[7], x[8]]];
 		const v1 = vec3.sub(vec3.create(), e[1], e[0]);
@@ -291,14 +293,39 @@ export const calcNormal = (posData: PosDataType) => {
 		const normal = vec3.cross(vec3.create(), v1, v2);
 		vec3.normalize(normal, normal);
 		const res = Array.from(normal);
-		return [res, res, res, res, res, res]; // 一个面2个三角形6个点
+		if (count === 4) {
+
+			return [res, res, res, res]; // 返回4个顶点自己处理
+		} else {
+			return [res, res, res, res, res, res]; // 一个面2个三角形6个点
+		}
 	}).flat(2);
+};
+/**
+ * 计算表面法线
+ */
+export const calcNormalN = (posData: PosDataType, count: 4 | 6 = 6) => {
+	return posData.map((x) => {
+		const e = [[x[0], x[1], x[2]], [x[3], x[4], x[5]], [x[6], x[7], x[8]]];
+		const v1 = vec3.sub(vec3.create(), e[1], e[0]);
+		const v2 = vec3.sub(vec3.create(), e[2], e[0]);
+		const normal = vec3.cross(vec3.create(), v1, v2);
+		vec3.normalize(normal, normal);
+		const res = Array.from(normal);
+		if (count === 4) {
+
+			return [res, res, res, res]; // 返回4个顶点自己处理
+		} else {
+			return [res, res, res, res, res, res]; // 一个面2个三角形6个点
+		}
+	});
 };
 type Info = {
 	a_pos: attrResType;
 	a_normal?: attrResType;
 	a_color?: attrResType;
 	u_model?: mat4;
+	u_world?: mat4;
 	u_proj: mat4;
 	u_view: mat4;
 	src: any,
@@ -306,7 +333,7 @@ type Info = {
 };
 
 export class Model {
-	constructor(data: PosDataType) {
+	constructor(data: PosDataType, normal?: number[]) {
 		this.data = data;
 		if (Model.memoPosfNormal.has(this.data)) {
 			const d = Model.memoPosfNormal.get(this.data);
@@ -314,7 +341,11 @@ export class Model {
 			this.normal = d!.n;
 		} else {
 			this.dataFlat = data.flat();
-			this.normal = calcNormal(this.data);
+			if (normal) {
+				this.normal = normal;
+			} else {
+				this.normal = calcNormal(this.data);
+			}
 			Model.memoPosfNormal.set(this.data, { d: this.dataFlat, n: this.normal });
 		}
 	}
@@ -323,11 +354,19 @@ export class Model {
 	public readonly normal: Array<number>;
 	public readonly children = new Set<Model>();
 	public readonly matrixStack = new Array<mat4>();
+	public parent?: Model;
 	public modelMat = mat4.create();
+	public worldMat = mat4.create();
 	public color = new Array<number>();
 	static memoPosfNormal = new Map<PosDataType, { d: Array<number>, n: Array<number> }>();
 	get childArray() {
 		return Array.from(this.children);
+	}
+	public addChild(...model: Model[]) {
+		model.forEach(x => {
+			x.parent = this;
+			this.children.add(x);
+		});
 	}
 	public fillRandColor(factor = 1) {
 		this.color = randColor(this.data, factor);
@@ -360,6 +399,22 @@ export class Model {
 			mat4.mul(this.modelMat, this.modelMat, mat);
 		}
 	}
+	public setWorldMatFromTranslate(translate?: Array<number>) {
+		if (!translate) {
+			this.worldMat = this.modelMat;
+			return;
+		}
+		const invert = mat4.invert(mat4.create(), mat4.fromTranslation(mat4.create(), translate));
+		mat4.mul(this.worldMat, this.modelMat, invert!);
+	}
+	public get finalModelmat(): mat4 {
+		if (this.parent) {
+			const mat = mat4.create();
+			return mat4.mul(mat, this.parent.finalModelmat, this.modelMat);
+		} else {
+			return this.modelMat;
+		}
+	}
 }
 /**
  * rect2triangle,将一个矩形展开成2个三角形
@@ -377,7 +432,8 @@ const r2t = (rect: Array<number>) => {
 	}
 	return rect;
 };
-export type cubeColorType = { front: number[]; back: number[]; right: number[]; left: number[]; top: number[]; bottom: number[]; };
+export type colorType = number[] | number;
+export type cubeColorType = { front: colorType; back: colorType; right: colorType; left: colorType; top: colorType; bottom: colorType; };
 export class Box extends Model {
 	public constructor({ x = 100, y = 100, z = 100, color = 'none' }: {
 		x?: number; y?: number; z?: number; color?: 'none' | 'rand' | cubeColorType
@@ -419,7 +475,7 @@ export class Box extends Model {
 					0, 0, z,]),
 			];
 			super(data);
-			Sphere.memoPos.set(str, data);
+			Box.memoPos.set(str, data);
 		}
 
 		if (color === 'rand') {
@@ -431,7 +487,16 @@ export class Box extends Model {
 	}
 	static memoPos = new Map<string, PosDataType>();
 	public fillColor({ front, back, right, left, top, bottom }: cubeColorType) {
-		this.color = [front, back, right, left, top, bottom].map(c => [c, c, c, c, c, c]).flat(2);
+		this.color = [front, back, right, left, top, bottom].map(color => {
+			let c: Array<number>;
+			if (color instanceof Array) {
+				c = color;
+			} else {
+				c = num2color(color);
+			}
+			c = c.map(c => c / 255);
+			return [c, c, c, c, c, c];
+		}).flat(2);
 	}
 }
 
@@ -442,16 +507,16 @@ type latLong = {
 };
 export class Sphere extends Model {
 	/**
-	 * 球体，面数 = 2 x latitude.sub x longitube.sub，默认1800面
+	 * 球体，面数 = 2 x latitude.sub x longitube.sub，默认2 x 30 x 30面
 	 * @param radius 半径
 	 * @param latitude 维度相关
 	 * @param longitude 经度相关
 	 */
 	public constructor({ radius = 100, latitude, longitude, color = 'none' }:
-		{ radius?: number; latitude?: Partial<latLong>; longitude?: Partial<latLong>; color?: 'none' | 'rand' | Array<number> } = {}) {
+		{ radius?: number; latitude?: Partial<latLong>; longitude?: Partial<latLong>; color?: 'none' | 'rand' | colorType } = {}) {
 		const str = JSON.stringify({ radius, latitude, longitude });
 		if (Sphere.memoPos.has(str)) {
-			super(Sphere.memoPos.get(str)!);
+			super(Sphere.memoPos.get(str)!.data);
 		} else {
 			const lat = { start: degToRad(90), end: degToRad(-90), sub: 30, ...latitude };
 			const long = { start: 0, end: degToRad(360), sub: 30, ...longitude };
@@ -472,8 +537,8 @@ export class Sphere extends Model {
 			}
 			const data = new Array<Array<number>>();
 			const p = pos;
-			for (let i = 0; i < p.length - 1; i++) {
-				for (let ii = 0; ii < p[i].length - 1; ii++) {
+			for (let i = 0; i < p.length - 1; i++) { // 层
+				for (let ii = 0; ii < p[i].length - 1; ii++) { // 列
 					data.push(r2t([
 						...p[i][ii + 1],
 						...p[i][ii],
@@ -482,26 +547,79 @@ export class Sphere extends Model {
 					]));
 				}
 			}
-			super(data);
-			Sphere.memoPos.set(str, data);
+			// 下面操作是平滑面法线
+			const n = calcNormalN(data);
+			const vec3Avg = (p: Array<number>, c: Array<number>) => {
+				p[0] += c[0] / 4;
+				p[1] += c[1] / 4;
+				p[2] += c[2] / 4;
+				return p;
+			};
+			for (let i = 0; i < lat.sub - 1; i += 1) {
+				for (let ii = 0; ii < long.sub; ii += 1) {
+					if (ii === long.sub - 1) { // 经度越界的地方变成0
+						const lt6 = n[lat.sub * i + ii][5]; // 左上角方块的第六个位置
+						const rt5 = n[lat.sub * i][4];
+						const lb1 = n[lat.sub * (i + 1) + ii][0];
+						const rb2 = n[lat.sub * (i + 1)][1];
+						const avg = [lt6, rt5, lb1, rb2].reduce(vec3Avg, [0, 0, 0]);
+						n[lat.sub * i + ii][5] = avg;
+						n[lat.sub * i][2] = avg;
+						n[lat.sub * i][4] = avg;
+						n[lat.sub * (i + 1) + ii][0] = avg;
+						n[lat.sub * (i + 1) + ii][3] = avg;
+						n[lat.sub * (i + 1)][1] = avg;
+					} else {
+						const lt6 = n[lat.sub * i + ii][5]; // 左上角方块的第六个位置
+						const rt5 = n[lat.sub * i + ii + 1][4];
+						const lb1 = n[lat.sub * (i + 1) + ii][0];
+						const rb2 = n[lat.sub * (i + 1) + ii + 1][1];
+						const avg = [lt6, rt5, lb1, rb2].reduce(vec3Avg, [0, 0, 0]);
+						n[lat.sub * i + ii][5] = avg;
+						n[lat.sub * i + ii + 1][2] = avg;
+						n[lat.sub * i + ii + 1][4] = avg;
+						n[lat.sub * (i + 1) + ii][0] = avg;
+						n[lat.sub * (i + 1) + ii][3] = avg;
+						n[lat.sub * (i + 1) + ii + 1][1] = avg;
+					}
+				}
+			}
+			const tAvg = [0, 1, 0]; // 北极点法线
+			const bAvg = [0, -1, 0]; // 南极点法线
+			for (let i = 0; i < long.sub; i++) {
+				n[i][0] = tAvg;
+				n[i][1] = tAvg;
+				n[i][3] = tAvg;
+				n[(lat.sub - 1) * long.sub + i][2] = bAvg;
+				n[(lat.sub - 1) * long.sub + i][4] = bAvg;
+				n[(lat.sub - 1) * long.sub + i][5] = bAvg;
+			}
+			const normal = n.flat(2);
+			super(data, normal);
+			Sphere.memoPos.set(str, { data, normal });
 		}
 		if (color === 'rand') {
 			this.fillRandColor();
-		} else if (color instanceof Array) {
-			this.fillColor(...color);
+		} else if ((color instanceof Array) || (typeof color === 'number')) {
+			this.fillColor(color);
 		}
 	}
-
-	static memoPos = new Map<string, PosDataType>();
+	static memoPos = new Map<string, { data: PosDataType, normal: Array<number> }>();
 	/**
 	 * 填充颜色
-	 * @param color vec4或者vec3 (0 -> 255)
+	 * @param color vec4或者vec3 (0 -> 255),0x1890ff
 	 */
-	public fillColor(...color: number[]) {
-		color = color.map(_ => _ / 255);
+	public fillColor(color: colorType) {
 		// 一个面2个三角形
+		let c: Array<number>;
+		if (color instanceof Array) {
+			c = color;
+		} else {
+			c = num2color(color);
+		}
+		c = c.map(c => c / 255);
 		for (let i = 0; i < this.data.length * 2 * 3; i++) {
-			this.color.push(...color);
+			this.color.push(...c);
 		}
 	}
 }
@@ -581,7 +699,7 @@ export class Scene<T extends Info> {
 	public projectionMat = mat4.create();
 	public viewMat = mat4.create();
 	public models = new Array<Model>();
-	public render(next?: { modelMat: mat4, child: Model }) {
+	public render(next?: { modelMat: mat4, worldMat: mat4, child: Model }) {
 		const { info, gl } = this;
 		if (next === undefined) {
 			info.u_proj = this.projectionMat;
@@ -589,6 +707,9 @@ export class Scene<T extends Info> {
 			this.models.forEach(x => {
 				if ('u_model' in info.src) {
 					info.u_model = x.modelMat;
+				}
+				if ('u_world' in info.src) {
+					info.u_world = x.worldMat;
 				}
 				if ('a_color' in info.src) { // 查看是否定义了这个attribute，比info.a_color速度更快
 					info.a_color!.set(x.color, x);
@@ -598,14 +719,18 @@ export class Scene<T extends Info> {
 				}
 				info.a_pos.set(x.dataFlat, x);
 				x.render(gl);
-				x.children.forEach(y => this.render({ modelMat: x.modelMat || mat4.create(), child: y }));
+				x.children.forEach(y => this.render({
+					modelMat: x.modelMat,
+					worldMat: x.worldMat,
+					child: y
+				}));
 			});
 		} else {
 			const x = next.child;
-			const nextModelMat = mat4.mul(mat4.create(), next.modelMat, x.modelMat || mat4.create());
-			if (x.modelMat) {
-				info.u_model = nextModelMat;
-			}
+			const nextModelMat = mat4.mul(mat4.create(), next.modelMat, x.modelMat);
+			const nextWorldMat = mat4.mul(mat4.create(), next.worldMat, x.worldMat);
+			info.u_model = nextModelMat;
+			info.u_world = nextWorldMat;
 			if ('a_color' in info.src) { // 查看是否定义了这个attribute，比info.a_color速度更快
 				info.a_color!.set(x.color, x);
 			}
@@ -614,7 +739,11 @@ export class Scene<T extends Info> {
 			}
 			info.a_pos.set(x.dataFlat, x);
 			x.render(gl);
-			x.children.forEach(y => this.render({ modelMat: nextModelMat, child: y }));
+			x.children.forEach(y => this.render({
+				modelMat: nextModelMat,
+				worldMat: nextWorldMat,
+				child: y
+			}));
 		}
 	}
 	public addModel(...model: Model[]) {
@@ -761,10 +890,9 @@ export class RenderLoop {
 	public onceTask = new Array<(t: number) => any>();
 	public run(...tasks: Array<(t: number) => any>) {
 		this.addTask(...tasks);
-		let lastRec = Date.now();
 		let lastT = Date.now();
 		const loop = (t: number) => {
-			requestAnimationFrame(loop);
+			this.rqaId = requestAnimationFrame(loop);
 			const dt = t - lastT;
 			this.task.forEach(x => x(dt));
 			this.onceTask.forEach(x => x(dt));
@@ -778,7 +906,7 @@ export class RenderLoop {
 		this.rqaId = requestAnimationFrame(loop);
 	}
 	public stop() {
-		if (this.rqaId) {
+		if (this.rqaId !== undefined) {
 			cancelAnimationFrame(this.rqaId);
 		}
 	}
@@ -799,7 +927,7 @@ export class RenderLoop {
 	public calcFps(t: number) {
 		this.count++;
 		const recInterval = 10;
-		if (this.count % recInterval === 0 ) {
+		if (this.count % recInterval === 0) {
 			const dt = (t - this.lastRecTime) / recInterval;
 			const fps = 1000 / dt;
 			if (this.averageFps === -1) {
@@ -812,3 +940,18 @@ export class RenderLoop {
 		}
 	}
 }
+
+/**
+ * 
+ * @param c 
+ */
+export const num2color = (c: number) => {
+	const r = c >> 16;
+	const g = (c >> 8) & 0xff;
+	const b = c & 0xff;
+	return [r, g, b];
+};
+
+export const getClassName = (t: any) => {
+	return t.__proto__.constructor.name as string;
+};
