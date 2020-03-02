@@ -1,9 +1,10 @@
 import { mat3, mat4, vec2, vec3, vec4 } from 'gl-matrix';
+import { CSSProperties } from 'react';
 
 export function resize(canvas: any) {
 	// 获取浏览器中画布的显示尺寸
-	let displayWidth = canvas.clientWidth;
-	let displayHeight = canvas.clientHeight;
+	const displayWidth = canvas.clientWidth;
+	const displayHeight = canvas.clientHeight;
 
 	// 检尺寸是否相同
 	if (canvas.width !== displayWidth ||
@@ -14,6 +15,11 @@ export function resize(canvas: any) {
 		canvas.height = displayHeight;
 	}
 }
+export const setCSS = (style: CSSProperties, ele: HTMLElement) => {
+    Object.entries(style).forEach(([k, v]) => {
+        (ele.style as any)[k] = v;
+    });
+};
 
 export function createShader({ gl, type, source }: { gl: WebGLRenderingContext; type: number; source: string; }) {
 	var shader = gl.createShader(type);
@@ -138,26 +144,36 @@ type attrResType = { set(data: Array<number>, id?: any): void, get(id: any): Arr
 type attrType<A> = { [p in keyof A]: attrResType };
 const programInfoFromKey = <A extends constraintNull, U extends constraintAll>({ gl, program, attribute, uniform }:
 	{ gl: WebGLRenderingContext; program: WebGLProgram; attribute: A; uniform: U; }) => {
-	gl.useProgram(program);
+	const switchProgram = () => {
+		if (gl.getParameter(gl.CURRENT_PROGRAM) !== program) {
+			gl.useProgram(program);
+		}
+	};
+	switchProgram();
 	const loc = {} as { [p in keyof A]: number } & { [p in keyof U]: WebGLUniformLocation | null };
 	const res = {} as { program: WebGLProgram; loc: typeof loc; src: A & U } & unifType<U> & attrType<A>; // 如果定义在一个即将展开的对象上,setget生效
 	Object.keys(attribute).forEach(x => {
 		(loc as any)[x] = gl.getAttribLocation(program, x);
 		const size = attribute[x];
-		const idRec = new Map<any, { d: Array<number>; b: WebGLBuffer | null }>();
+		const idRec = new Map<any, { data: Array<number>; buf: WebGLBuffer | null }>();
 		(res as any)[x] = {
 			get(id: any) {
-				return idRec.get(id) && idRec.get(id)!.d;
+				const res = idRec.get(id);
+				if (res) {
+					return res.data;
+				}
 			},
 			set(data: any, id?: any) {
+				switchProgram();
 				if (id === undefined) {
 					BufferData.write(gl, data, size, loc[x]);
 				} else {
-					if (idRec.get(id) && idRec.get(id)!.d === data) { // 可以重用数据
-						BufferData.reuse(gl, idRec.get(id)!.b, size, loc[x]);
+					const rec = idRec.get(id);
+					if (rec !== undefined && rec.data === data) { // 可以重用数据
+						BufferData.reuse(gl, rec.buf, size, loc[x]);
 					} else {
-						const b = BufferData.write(gl, data, size, loc[x]);
-						idRec.set(id, { d: data, b });
+						const buf = BufferData.write(gl, data, size, loc[x]);
+						idRec.set(id, { data, buf });
 					}
 				}
 			}
@@ -168,6 +184,7 @@ const programInfoFromKey = <A extends constraintNull, U extends constraintAll>({
 		const eset = createSetUniformFn(gl, uloc);
 		Object.defineProperty(res, x, {
 			set(_: any) {
+				switchProgram();
 				eset(_);
 			},
 			get() {
@@ -200,49 +217,57 @@ export type programInfoParamsT<A, U> = {
 	}
 };
 
-
+/**
+ * 创建程序信息
+ * @param param0 
+ */
 export const createProgramInfo = <A extends constraintNull, U extends constraintAll>({ gl, location, source }: programInfoParamsT<A, U>) => {
 	const program = createProgram(gl, source.vertex, source.fragment);
 	return programInfoFromKey({ gl, program, attribute: location.attribute, uniform: location.uniform });
 };
 
-export type setVParamsType<V> = (Partial<V> | ((s: V) => Partial<V>) | { action: 'incr' | 'decr', key: keyof V, value: number });
-export const createSetValueFn = <T, V, U extends { value: V }>(gl: WebGLRenderingContext, programInfo: T, render: (gl: WebGLRenderingContext, info: T, v?: V) => any, state: U) => {
-	const throttleRender = throttle((s: U) => render(gl, programInfo, s.value), 1000 / 60);
-	return (s: setVParamsType<V>) => {
-		let { value } = state;
-		if (typeof s === 'object') {
-			if ('action' in s) {
-				const v = value as any;
-				if (typeof v[s.key] !== 'number') {
-					throw new Error(`key:${s.key} 不能作用于value:${value},type:${typeof v[s.key]}`);
+export type setStateType<V> = (Partial<V> | ((s: V) => Partial<V>) | { action: 'incr' | 'decr', key: keyof V, value: number });
+/**
+ * 创建设置状态函数
+ * @param gl 
+ * @param programInfo 程序信息，渲染器的参数 render(gl, programInfo, s.state) 
+ * @param render 渲染函数 
+ * @param s 包含state键的对象，用来作为状态的唯一源，和渲染器的参数
+ */
+export const createSetStateFn = <T, V, U extends { state: V }>(gl: WebGLRenderingContext, programInfo: T, render: (gl: WebGLRenderingContext, info: T, v?: V) => any, s: U) => {
+	const throttleRender = throttle((s: U) => render(gl, programInfo, s.state), 12);
+	return (set: setStateType<V>) => {
+		let { state } = s;
+		if (typeof set === 'object') {
+			if ('action' in set) {
+				const v = state as any;
+				if (typeof v[set.key] !== 'number') {
+					throw new Error(`key:${set.key} 不能作用于value:${v},type:${typeof v[set.key]}`);
 				}
-				switch (s.action) {
+				switch (set.action) {
 					case 'incr':
-						v[s.key] += s.value;
+						v[set.key] += set.value;
 						break;
 					case 'decr':
-						v[s.key] -= s.value;
+						v[set.key] -= set.value;
 						break;
 				}
 			} else {
-				value = { ...value, ...s };
+				state = { ...state, ...set };
 			}
 		} else {
-			value = { ...value, ...s(value) };
+			state = { ...state, ...set(state) };
 		}
-		state.value = value;
-		throttleRender(state);
-		return value;
+		s.state = state;
+		//throttleRender(state);
+		//render(gl, programInfo, state.value)
+		return state;
 	};
 };
 
 export const array2Vec3 = (_: Array<number>) => vec3.fromValues(_[0], _[1], _[2]);
 
 type PosDataType = number[][];
-export const flatPos = (data: PosDataType) => {
-	return data.flat(1);
-};
 
 export const randColor = (posData: PosDataType, factor = 1) => {
 	const colorData = posData.map(() => {
@@ -276,8 +301,10 @@ type Info = {
 	u_model?: mat4;
 	u_proj: mat4;
 	u_view: mat4;
-	src: any
+	src: any,
+	program: WebGLProgram;
 };
+
 export class Model {
 	constructor(data: PosDataType) {
 		this.data = data;
@@ -286,7 +313,6 @@ export class Model {
 			this.dataFlat = d!.d;
 			this.normal = d!.n;
 		} else {
-
 			this.dataFlat = data.flat();
 			this.normal = calcNormal(this.data);
 			Model.memoPosfNormal.set(this.data, { d: this.dataFlat, n: this.normal });
@@ -295,25 +321,44 @@ export class Model {
 	public readonly data: PosDataType;
 	public readonly dataFlat: Array<number>;
 	public readonly normal: Array<number>;
-	public modelMat?: mat4;
+	public readonly children = new Set<Model>();
+	public readonly matrixStack = new Array<mat4>();
+	public modelMat = mat4.create();
 	public color = new Array<number>();
 	static memoPosfNormal = new Map<PosDataType, { d: Array<number>, n: Array<number> }>();
-
+	get childArray() {
+		return Array.from(this.children);
+	}
 	public fillRandColor(factor = 1) {
 		this.color = randColor(this.data, factor);
 	}
 	public render(gl: WebGLRenderingContext) {
 		gl.drawArrays(gl.TRIANGLES, 0, this.dataFlat.length / 3);
 	}
-	public setModelMat(fn: (_: mat4) => mat4 | void) {
-		const mat = mat4.create();
-		const res = fn(mat);
-		if (res) {
-			this.modelMat = res;
+	public setModelMat(fn: ((_: mat4) => mat4 | void) | mat4) {
+		if (typeof fn === 'function') {
+			const mat = mat4.create();
+			const res = fn(mat);
+			if (res) {
+				this.modelMat = res;
+			} else {
+				this.modelMat = mat;
+			}
 		} else {
-			this.modelMat = mat;
+			this.modelMat = fn;
 		}
 		return this.modelMat;
+	}
+	public pushMat(mat: mat4) {
+		this.matrixStack.push(mat);
+		mat4.mul(this.modelMat, this.modelMat, mat);
+	}
+	public popMat() {
+		const mat = this.matrixStack.pop();
+		if (mat) {
+			mat4.invert(mat, mat);
+			mat4.mul(this.modelMat, this.modelMat, mat);
+		}
 	}
 }
 /**
@@ -332,43 +377,51 @@ const r2t = (rect: Array<number>) => {
 	}
 	return rect;
 };
-
+export type cubeColorType = { front: number[]; back: number[]; right: number[]; left: number[]; top: number[]; bottom: number[]; };
 export class Box extends Model {
-	public constructor({ x = 100, y = 100, z = 100, color = 'none' }:
-		{ x?: number; y?: number; z?: number; color?: 'none' | 'rand' | { front: number[]; back: number[]; right: number[]; left: number[]; top: number[]; bottom: number[]; } } = {}) {
-		const data = [
-			// front
-			r2t([x, y, z,
-				0, y, z,
-				0, 0, z,
-				x, 0, z,]),
-			// back
-			r2t([x, y, 0,
-				x, 0, 0,
-				0, 0, 0,
-				0, y, 0,]),
-			// right
-			r2t([x, y, z,
-				x, 0, z,
-				x, 0, 0,
-				x, y, 0]),
-			//left
-			r2t([0, y, z,
-				0, y, 0,
-				0, 0, 0,
-				0, 0, z,]),
-			//top
-			r2t([x, y, 0,
-				0, y, 0,
-				0, y, z,
-				x, y, z,]),
-			//bottom
-			r2t([0, 0, 0,
-				x, 0, 0,
-				x, 0, z,
-				0, 0, z,]),
-		];
-		super(data);
+	public constructor({ x = 100, y = 100, z = 100, color = 'none' }: {
+		x?: number; y?: number; z?: number; color?: 'none' | 'rand' | cubeColorType
+	} = {}) {
+		const str = JSON.stringify({ x, y, z });
+		if (Box.memoPos.has(str)) {
+			super(Box.memoPos.get(str)!);
+		} else {
+			const data = [
+				// front
+				r2t([x, y, z,
+					0, y, z,
+					0, 0, z,
+					x, 0, z,]),
+				// back
+				r2t([x, y, 0,
+					x, 0, 0,
+					0, 0, 0,
+					0, y, 0,]),
+				// right
+				r2t([x, y, z,
+					x, 0, z,
+					x, 0, 0,
+					x, y, 0]),
+				//left
+				r2t([0, y, z,
+					0, y, 0,
+					0, 0, 0,
+					0, 0, z,]),
+				//top
+				r2t([x, y, 0,
+					0, y, 0,
+					0, y, z,
+					x, y, z,]),
+				//bottom
+				r2t([0, 0, 0,
+					x, 0, 0,
+					x, 0, z,
+					0, 0, z,]),
+			];
+			super(data);
+			Sphere.memoPos.set(str, data);
+		}
+
 		if (color === 'rand') {
 			this.fillRandColor();
 		}
@@ -376,8 +429,8 @@ export class Box extends Model {
 			this.fillColor(color);
 		}
 	}
-	public fillColor({ front, back, right, left, top, bottom }:
-		{ front: number[]; back: number[]; right: number[]; left: number[]; top: number[]; bottom: number[]; }) {
+	static memoPos = new Map<string, PosDataType>();
+	public fillColor({ front, back, right, left, top, bottom }: cubeColorType) {
 		this.color = [front, back, right, left, top, bottom].map(c => [c, c, c, c, c, c]).flat(2);
 	}
 }
@@ -428,7 +481,6 @@ export class Sphere extends Model {
 						...p[i + 1][ii + 1],
 					]));
 				}
-
 			}
 			super(data);
 			Sphere.memoPos.set(str, data);
@@ -497,10 +549,10 @@ export class Point extends Model {
  */
 export class Assembly extends Model {
 	public constructor(...models: Array<Model>) {
-		super([[]]);
+		super([]);
 		for (const i of models) {
-			this.color.push(...i.color);
-			if (i.modelMat) {
+			this.color = [...this.color, ...i.color];
+			if (!mat4.equals(i.modelMat, mat4.create())) {
 				for (let ii = 0; ii < i.normal.length; ii += 3) {
 					const pos = vec3.fromValues(i.dataFlat[ii], i.dataFlat[ii + 1], i.dataFlat[ii + 2]);
 					this.dataFlat.push(...Array.from(vec3.transformMat4(vec3.create(), pos, i.modelMat)));
@@ -519,22 +571,40 @@ export class Assembly extends Model {
 }
 
 export class Scene<T extends Info> {
-	public constructor(...models: Array<Model>) {
+	public constructor(gl: WebGLRenderingContext, info: T, ...models: Array<Model>) {
 		this.models.push(...models);
+		this.gl = gl;
+		this.info = info;
 	}
-	private projectionMat = mat4.create();
-	private viewMat = mat4.create();
-	private models = new Array<Model>();
-	public render(gl: WebGLRenderingContext, info: T) {
-		info.u_proj = this.projectionMat;
-		info.u_view = this.viewMat;
-		this.models.forEach(x => {
-			if (x.modelMat && ('u_model' in info.src)) {
-				info.u_model = x.modelMat;
-			} else {
+	public gl: WebGLRenderingContext;
+	public info: T;
+	public projectionMat = mat4.create();
+	public viewMat = mat4.create();
+	public models = new Array<Model>();
+	public render(next?: { modelMat: mat4, child: Model }) {
+		const { info, gl } = this;
+		if (next === undefined) {
+			info.u_proj = this.projectionMat;
+			info.u_view = this.viewMat;
+			this.models.forEach(x => {
 				if ('u_model' in info.src) {
-					info.u_model = mat4.create();
+					info.u_model = x.modelMat;
 				}
+				if ('a_color' in info.src) { // 查看是否定义了这个attribute，比info.a_color速度更快
+					info.a_color!.set(x.color, x);
+				}
+				if ('a_normal' in info.src) {
+					info.a_normal!.set(x.normal, x);
+				}
+				info.a_pos.set(x.dataFlat, x);
+				x.render(gl);
+				x.children.forEach(y => this.render({ modelMat: x.modelMat || mat4.create(), child: y }));
+			});
+		} else {
+			const x = next.child;
+			const nextModelMat = mat4.mul(mat4.create(), next.modelMat, x.modelMat || mat4.create());
+			if (x.modelMat) {
+				info.u_model = nextModelMat;
 			}
 			if ('a_color' in info.src) { // 查看是否定义了这个attribute，比info.a_color速度更快
 				info.a_color!.set(x.color, x);
@@ -544,7 +614,8 @@ export class Scene<T extends Info> {
 			}
 			info.a_pos.set(x.dataFlat, x);
 			x.render(gl);
-		});
+			x.children.forEach(y => this.render({ modelMat: nextModelMat, child: y }));
+		}
 	}
 	public addModel(...model: Model[]) {
 		this.models.push(...model);
@@ -561,6 +632,10 @@ export class Scene<T extends Info> {
 		} else {
 			this.projectionMat = fn;
 		}
+		return this.projectionMat;
+	}
+	public setProjection(fovy: number, aspect: number, near: number, far: number) {
+		this.setProjectionMat(x => mat4.perspective(x, fovy, aspect, near, far));
 		return this.projectionMat;
 	}
 	public setViewMat(fn: ((_: mat4) => mat4 | void) | mat4) {
@@ -603,35 +678,137 @@ export const throttle = (func: (...args: any[]) => any, threshold: number = 300)
 	return (...args: any[]) => {
 		if (lastT === 0 || Date.now() - lastT > threshold) {
 			lastT = Date.now();
-			func(...args);
+			return func(...args);
 		}
 	};
 };
 
 
-export type actionsType<V> = ((tDiff: number) => setVParamsType<V>) | { action: (tDiff: number) => setVParamsType<V>, once?: boolean };
-export const createKeyListener = <V>(actions: { [x: string]: actionsType<V> }) => {
+export type actionsType<V> = ((tDiff: number) => setStateType<V>) | { action: (tDiff: number) => setStateType<V>, once?: boolean };
+export const createKeyListenerTask = <V>(actions: { [x: string]: actionsType<V> }) => {
 	const keyPressing = new Set<string>();
 	document.addEventListener('keydown', x => keyPressing.add(x.code));
 	document.addEventListener('keyup', x => keyPressing.delete(x.code));
-	let lastT = 0;
-	const loop = (t: number) => {
+	return (t: number) => {
 		keyPressing.forEach((k) => {
 			const p = actions[k as any];
 			if (p) {
 				if (typeof p === 'function') {
-					p(t - lastT);
+					p(t);
 				} else {
 					const { once, action } = p;
-					action(t - lastT);
+					action(t);
 					if (once) { // 只执行一次
 						keyPressing.delete(k);
 					}
 				}
 			}
 		});
-		lastT = t;
-		requestAnimationFrame(loop);
 	};
-	loop(16.6);
 };
+
+export class GL<T extends { [x: string]: Info }, S> {
+	constructor(gl: WebGLRenderingContext, info: T, state: S) {
+		this.gl = gl;
+		this.info = info;
+		this.state = state;
+		this.setState = createSetStateFn(gl, info, this.renderFrame.bind(this), this);
+		this.loop.renderTask = this.renderFrame.bind(this);
+		this.resize();
+	}
+	public gl: WebGLRenderingContext;
+	public state: Readonly<S>;
+	public loop = new RenderLoop();
+	public info: T;
+	public render(): Scene<Info>[] | void {
+		throw new Error('Method not implemented.');
+	}
+	public setState(s: setStateType<S>): S {
+		throw new Error('Method not implemented.');
+	}
+	public clear() {
+		const { gl } = this;
+		gl.enable(gl.DEPTH_TEST);
+		gl.enable(gl.CULL_FACE);
+		gl.clearColor(0, 0, 0, 0);
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+	}
+	public renderFrame() {
+		this.clear();
+		const res = this.render();
+		if (res) {
+			res.forEach(x => {
+				x.render();
+			});
+		}
+	}
+	public resize() {
+		const { gl } = this;
+		resize(gl.canvas);
+		gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+	}
+
+}
+
+export class RenderLoop {
+	public rqaId: number | undefined;
+	public fps: number = 0;
+	public averageFps: number = -1;
+	public lastRecTime = 0;
+	public count: number = 0;
+	public renderTask: ((t: number) => any) | undefined;
+	public task = new Array<(t: number) => any>();
+	public onceTask = new Array<(t: number) => any>();
+	public run(...tasks: Array<(t: number) => any>) {
+		this.addTask(...tasks);
+		let lastRec = Date.now();
+		let lastT = Date.now();
+		const loop = (t: number) => {
+			requestAnimationFrame(loop);
+			const dt = t - lastT;
+			this.task.forEach(x => x(dt));
+			this.onceTask.forEach(x => x(dt));
+			this.renderTask?.call(null, dt);
+			lastT = t;
+			if (this.onceTask.length !== 0) {
+				this.onceTask = [];
+			}
+			this.calcFps(t);
+		};
+		this.rqaId = requestAnimationFrame(loop);
+	}
+	public stop() {
+		if (this.rqaId) {
+			cancelAnimationFrame(this.rqaId);
+		}
+	}
+	public addTask(...tasks: Array<(t: number) => any>) {
+		tasks.forEach(x => {
+			if (this.task.indexOf(x) === -1) {
+				this.task.push(x);
+			}
+		});
+	}
+	public addOnceTask(...tasks: Array<(t: number) => any>) {
+		tasks.forEach(x => {
+			if (this.onceTask.indexOf(x) === -1) {
+				this.onceTask.push(x);
+			}
+		});
+	}
+	public calcFps(t: number) {
+		this.count++;
+		const recInterval = 10;
+		if (this.count % recInterval === 0 ) {
+			const dt = (t - this.lastRecTime) / recInterval;
+			const fps = 1000 / dt;
+			if (this.averageFps === -1) {
+				this.averageFps = fps;
+			} else {
+				this.averageFps = (this.averageFps * (this.count - recInterval) + fps * recInterval) / this.count;
+			}
+			this.fps = fps;
+			this.lastRecTime = t;
+		}
+	}
+}

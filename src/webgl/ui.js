@@ -1,3 +1,5 @@
+import { setCSS } from "./tool";
+
 /*
  * Copyright 2016, Gregg Tavares.
  * All rights reserved.
@@ -36,6 +38,9 @@ export const ui = (function () {
         var parent = document.querySelector(selector);
         if (!parent) {
             parent = document.createElement('div');
+            setCSS({
+             overflow:'hidden',   
+            },parent);
             document.querySelector("#ui-container").appendChild(parent)
         }
         parent.addEventListener('mousedown', x => {
