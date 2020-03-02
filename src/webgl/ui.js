@@ -251,13 +251,13 @@ export const ui = (function () {
         }
         return params;
     }
-
     return {
         setupUI: setupUI,
         updateUI: updateUI,
         setupSlider: setupSlider,
         makeSlider: makeSlider,
         makeCheckbox: makeCheckbox,
+        container:document.querySelector("#ui-container")
     };
 
 })();
