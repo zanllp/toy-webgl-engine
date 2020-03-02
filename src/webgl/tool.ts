@@ -1,9 +1,10 @@
 import { mat3, mat4, vec2, vec3, vec4 } from 'gl-matrix';
+import { CSSProperties } from 'react';
 
 export function resize(canvas: any) {
 	// 获取浏览器中画布的显示尺寸
-	let displayWidth = canvas.clientWidth;
-	let displayHeight = canvas.clientHeight;
+	const displayWidth = canvas.clientWidth;
+	const displayHeight = canvas.clientHeight;
 
 	// 检尺寸是否相同
 	if (canvas.width !== displayWidth ||
@@ -14,6 +15,11 @@ export function resize(canvas: any) {
 		canvas.height = displayHeight;
 	}
 }
+export const setCSS = (style: CSSProperties, ele: HTMLElement) => {
+    Object.entries(style).forEach(([k, v]) => {
+        (ele.style as any)[k] = v;
+    });
+};
 
 export function createShader({ gl, type, source }: { gl: WebGLRenderingContext; type: number; source: string; }) {
 	var shader = gl.createShader(type);
@@ -247,13 +253,13 @@ export const createSetStateFn = <T, V, U extends { state: V }>(gl: WebGLRenderin
 						break;
 				}
 			} else {
-				state = { ...state, ...s };
+				state = { ...state, ...set };
 			}
 		} else {
 			state = { ...state, ...set(state) };
 		}
 		s.state = state;
-		throttleRender(state);
+		//throttleRender(state);
 		//render(gl, programInfo, state.value)
 		return state;
 	};
@@ -628,6 +634,10 @@ export class Scene<T extends Info> {
 		}
 		return this.projectionMat;
 	}
+	public setProjection(fovy: number, aspect: number, near: number, far: number) {
+		this.setProjectionMat(x => mat4.perspective(x, fovy, aspect, near, far));
+		return this.projectionMat;
+	}
 	public setViewMat(fn: ((_: mat4) => mat4 | void) | mat4) {
 		if (typeof fn === 'function') {
 			const mat = mat4.create();
@@ -675,30 +685,26 @@ export const throttle = (func: (...args: any[]) => any, threshold: number = 300)
 
 
 export type actionsType<V> = ((tDiff: number) => setStateType<V>) | { action: (tDiff: number) => setStateType<V>, once?: boolean };
-export const createKeyListener = <V>(actions: { [x: string]: actionsType<V> }) => {
+export const createKeyListenerTask = <V>(actions: { [x: string]: actionsType<V> }) => {
 	const keyPressing = new Set<string>();
 	document.addEventListener('keydown', x => keyPressing.add(x.code));
 	document.addEventListener('keyup', x => keyPressing.delete(x.code));
-	let lastT = Date.now();
-	const loop = (t: number) => {
-		requestAnimationFrame(loop);
+	return (t: number) => {
 		keyPressing.forEach((k) => {
 			const p = actions[k as any];
 			if (p) {
 				if (typeof p === 'function') {
-					p(t - lastT);
+					p(t);
 				} else {
 					const { once, action } = p;
-					action(t - lastT);
+					action(t);
 					if (once) { // 只执行一次
 						keyPressing.delete(k);
 					}
 				}
 			}
 		});
-		lastT = t;
 	};
-	loop(Date.now());
 };
 
 export class GL<T extends { [x: string]: Info }, S> {
@@ -707,19 +713,20 @@ export class GL<T extends { [x: string]: Info }, S> {
 		this.info = info;
 		this.state = state;
 		this.setState = createSetStateFn(gl, info, this.renderFrame.bind(this), this);
-		resize(gl.canvas);
-		gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+		this.loop.renderTask = this.renderFrame.bind(this);
+		this.resize();
 	}
-	gl: WebGLRenderingContext;
-	state: Readonly<S>;
-	info: T;
-	render(): Scene<Info>[] | void {
+	public gl: WebGLRenderingContext;
+	public state: Readonly<S>;
+	public loop = new RenderLoop();
+	public info: T;
+	public render(): Scene<Info>[] | void {
 		throw new Error('Method not implemented.');
 	}
-	setState(s: setStateType<S>): S {
+	public setState(s: setStateType<S>): S {
 		throw new Error('Method not implemented.');
 	}
-	clear() {
+	public clear() {
 		const { gl } = this;
 		gl.enable(gl.DEPTH_TEST);
 		gl.enable(gl.CULL_FACE);
@@ -733,6 +740,75 @@ export class GL<T extends { [x: string]: Info }, S> {
 			res.forEach(x => {
 				x.render();
 			});
+		}
+	}
+	public resize() {
+		const { gl } = this;
+		resize(gl.canvas);
+		gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+	}
+
+}
+
+export class RenderLoop {
+	public rqaId: number | undefined;
+	public fps: number = 0;
+	public averageFps: number = -1;
+	public lastRecTime = 0;
+	public count: number = 0;
+	public renderTask: ((t: number) => any) | undefined;
+	public task = new Array<(t: number) => any>();
+	public onceTask = new Array<(t: number) => any>();
+	public run(...tasks: Array<(t: number) => any>) {
+		this.addTask(...tasks);
+		let lastRec = Date.now();
+		let lastT = Date.now();
+		const loop = (t: number) => {
+			requestAnimationFrame(loop);
+			const dt = t - lastT;
+			this.task.forEach(x => x(dt));
+			this.onceTask.forEach(x => x(dt));
+			this.renderTask?.call(null, dt);
+			lastT = t;
+			if (this.onceTask.length !== 0) {
+				this.onceTask = [];
+			}
+			this.calcFps(t);
+		};
+		this.rqaId = requestAnimationFrame(loop);
+	}
+	public stop() {
+		if (this.rqaId) {
+			cancelAnimationFrame(this.rqaId);
+		}
+	}
+	public addTask(...tasks: Array<(t: number) => any>) {
+		tasks.forEach(x => {
+			if (this.task.indexOf(x) === -1) {
+				this.task.push(x);
+			}
+		});
+	}
+	public addOnceTask(...tasks: Array<(t: number) => any>) {
+		tasks.forEach(x => {
+			if (this.onceTask.indexOf(x) === -1) {
+				this.onceTask.push(x);
+			}
+		});
+	}
+	public calcFps(t: number) {
+		this.count++;
+		const recInterval = 10;
+		if (this.count % recInterval === 0 ) {
+			const dt = (t - this.lastRecTime) / recInterval;
+			const fps = 1000 / dt;
+			if (this.averageFps === -1) {
+				this.averageFps = fps;
+			} else {
+				this.averageFps = (this.averageFps * (this.count - recInterval) + fps * recInterval) / this.count;
+			}
+			this.fps = fps;
+			this.lastRecTime = t;
 		}
 	}
 }

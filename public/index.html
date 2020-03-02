@@ -26,11 +26,17 @@
 </head>
 <style>
   /* Licensed under a BSD license. See ../license.html for license */
-  #ui-container {
+  #console {
     position: absolute;
+    display: flex;
+    flex-direction: row;
     right: 0;
     border-bottom-left-radius: 4px;
     background-color: rgba(255, 255, 255, 0.9);
+    user-select: none;
+    padding: 8px;
+    min-width: 5%;
+    min-height: 5%;
   }
 
   .gman-slider-label,
@@ -80,14 +86,17 @@
   .gman-widget-slider {
     min-width: 120px;
   }
-
-
-
 </style>
+
 <body>
   <noscript>You need to enable JavaScript to run this app.</noscript>
-  <div id="hint" style="font-size: 3em;text-align: center;line-height: 32px;margin: 16px 0;">正在生成5000个200三角面的球体，且会进行组合，耐心等待</div>
-  <div id="ui-container">
+  <div id="hint" style="font-size: 3em;text-align: center;line-height: 32px;margin: 16px 0;">
+    正在生成5000个200三角面的球体，且会进行组合，耐心等待</div>
+  <div id="console">
+    <div id="dashboard">
+    </div>
+    <div id="ui-container">
+    </div>
   </div>
   <div id="root"></div>
   <!--

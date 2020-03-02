@@ -1,11 +1,11 @@
 import { mat2, mat3, mat4, vec3, vec4 } from 'gl-matrix';
-import { array2Vec3, Box, createProgramInfo, degToRad, modifyWindow, printMat, Scene, createKeyListener, Sphere, Mesh, Point, GL } from './tool';
+import { array2Vec3, Box, createProgramInfo, degToRad, modifyWindow, printMat, Scene, createKeyListenerTask, Sphere, Mesh, Point, GL, setCSS } from './tool';
+import { ui } from './ui';
 
 modifyWindow({ mat3, printMat, vec3, vec4, mat2, mat4, d2r: degToRad });
-
 export const webgl = (gl: WebGLRenderingContext) => {
     setTimeout(() => {
-        new App(gl).renderFrame();
+        new App(gl);
         document.querySelector('#hint')?.remove();
     });
 };
@@ -13,15 +13,22 @@ export const webgl = (gl: WebGLRenderingContext) => {
 type infoT = ReturnType<typeof createInfo>;
 const initState = {
     z: 1600, y: 600, x: 0,
-    rotateCameraY: 0, rotateCameraX: 0, scale: 1,
+    rotateCameraY: 0, rotateCameraX: 0, scale: 0.3,
     rotateY: 0, rotateX: 0,
-    shininess: 50,
+    shininess: 60,
 };
 
 export class App extends GL<infoT, typeof initState> {
     constructor(gl: WebGLRenderingContext) {
         super(gl, createInfo(gl), initState);
         const setS = this.setState;
+        window.addEventListener('resize', () => {
+            const { gl, model } = this;
+            this.resize();
+            model.scene.setProjection(degToRad(45), gl.canvas.width / gl.canvas.height, 1, 4000);
+            model.scene2.setProjectionMat(model.scene.projectionMat);
+            this.renderFrame();
+        });
         document.addEventListener('wheel', x => {
             const direction = x.deltaY / Math.abs(x.deltaY);
             return setS(_ => ({ scale: _.scale * (1 + (direction * .1)) }));
@@ -45,7 +52,7 @@ export class App extends GL<infoT, typeof initState> {
                 }));
             }
         });
-        createKeyListener({
+        const keyTask = createKeyListenerTask({
             ArrowLeft: t => setS({ action: 'decr', key: 'rotateCameraY', value: t / 20 }),
             ArrowDown: t => setS({ action: 'decr', key: 'rotateCameraX', value: t / 20 }),
             ArrowUp: t => setS({ action: 'incr', key: 'rotateCameraX', value: t / 20 }),
@@ -59,6 +66,27 @@ export class App extends GL<infoT, typeof initState> {
             KeyE: t => setS({ action: 'incr', key: 'rotateCameraY', value: t / 50 }),
             KeyX: t => setS({ action: 'incr', key: 'rotateY', value: t / 5000 })
         });
+        this.loop.addTask(t => setS({ action: 'incr', key: 'rotateY', value: t / 5000 }));
+        this.loop.run(keyTask);
+        const uic = document.querySelector('#dashboard')!;
+        const fps = document.createElement('span');
+        setCSS({
+            whiteSpace: 'pre',
+            display: 'block',
+            textAlign: 'right',
+            margin: '8px'
+        }, fps);
+        uic.appendChild(fps);
+        setInterval(() => {
+            const { loop } = this;
+            fps.innerText =
+                `fps:${loop.fps.toFixed(2)}
+平均fps:${loop.averageFps.toFixed(2)}`;
+        }, 300);
+        const s = this.state;
+        ui.setupSlider('#rotate-y', { value: s.rotateY, slide: (x: any) => setS({ rotateY: x }), min: -360, max: 360 });
+        ui.setupSlider('#rotate-x', { value: s.rotateX, slide: (x: any) => setS({ rotateX: x }), min: -360, max: 360 });
+        ui.setupSlider('#range-shininess', { value: s.shininess, slide: (x: any) => setS({ shininess: x }), min: 1, max: 100, step: 1 });
     }
     public model = createModel(this.gl, this.info);
     public clicked = false;
@@ -131,12 +159,10 @@ export class App extends GL<infoT, typeof initState> {
 
 const createModel = (gl: WebGLRenderingContext, info: infoT) => {
     const box0 = new Box({ color: 'rand' });
-    const sphere = new Sphere({ radius: 400, color: 'rand' });
+    const sphere = new Sphere({ radius: 400, color: 'rand', latitude: { sub: 100 }, longitude: { sub: 100 } });
     sphere.setModelMat(x => {
         mat4.translate(x, x, [0, 800, 0]);
     });
-    //const largeSphere = new Sphere({ radius: 1000, latitude: { sub:2500 }, longitude: { sub:2500 }, color: 'rand' }); // 1250w面
-
     for (let i = 0; i < 6; i++) {
         const box = new Sphere({ radius: 150 + 50 * Math.random(), color: 'rand' });
         const mat = mat4.create();
@@ -152,14 +178,7 @@ const createModel = (gl: WebGLRenderingContext, info: infoT) => {
     const mesh = new Mesh({ is3d: true, range: 8000, num: 100 });
     const point = new Point(70, 30, 120);
     const scene2 = new Scene(gl, info.mesh, mesh, point);
-    scene.setProjectionMat(projection => {
-        // 视锥在zNear 的距离时是 2 个单位高和 2 * aspect 个单位宽。视图的范围是 -1 到 +1 
-        const fieldOfView = degToRad(45);
-        const aspect = gl.canvas.width / gl.canvas.height;
-        const zNear = 1;
-        const zFar = 4000;
-        mat4.perspective(projection, fieldOfView, aspect, zNear, zFar); // 投影
-    });
+    scene.setProjection(degToRad(45), gl.canvas.width / gl.canvas.height, 1, 4000);
     scene2.setProjectionMat(scene.projectionMat);
     return { scene, scene2, box0, sphere };
 };
