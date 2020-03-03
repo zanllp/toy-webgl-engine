@@ -1,5 +1,12 @@
 import { mat2, mat3, mat4, vec3, vec4 } from 'gl-matrix';
-import { array2Vec3, Box, createProgramInfo, degToRad, modifyWindow, printMat, Scene, createKeyListenerTask, Sphere, Mesh, Point, GL, setCSS, getClassName, Model } from './tool';
+import negX from './sky/neg-x.jpg';
+import negY from './sky/neg-y.jpg';
+import negZ from './sky/neg-z.jpg';
+import posX from './sky/pos-x.jpg';
+import posY from './sky/pos-y.jpg';
+import posZ from './sky/pos-z.jpg';
+// tslint:disable-next-line: max-line-length
+import { array2Vec3, Box, BufferData, createKeyListenerTask, createProgramInfo, degToRad, getClassName, GL, Mesh, Model, modelMat2WorldMat, modifyWindow, Point, printMat, Scene, setCSS, Sphere, TexData, Texture } from './tool';
 import { ui } from './ui';
 
 modifyWindow({ mat3, printMat, vec3, vec4, mat2, mat4, d2r: degToRad });
@@ -23,7 +30,7 @@ const initState = {
 
 };
 
-export class App extends GL<infoT, typeof initState> {
+export class App extends GL<any, typeof initState> {
     constructor(gl: WebGLRenderingContext) {
         super(gl, createInfo(gl), initState);
         const setS = this.setState;
@@ -117,7 +124,7 @@ export class App extends GL<infoT, typeof initState> {
         selectEle.appendChild(unSelect);
         const hint = document.createElement('span');
         hint.innerText = '选择注视目标';
-        selectEle.insertBefore(hint,selectEle.firstChild);
+        selectEle.insertBefore(hint, selectEle.firstChild);
 
         const s = this.state;
         ui.setupSlider('#rotate-y', { value: s.rotateY, slide: (x: any) => setS({ rotateY: x }), min: -360, max: 360 });
@@ -139,7 +146,7 @@ export class App extends GL<infoT, typeof initState> {
     public clicked = false;
 
     render() {
-        const { info } = this;
+        const { info, gl } = this;
         const s = this.state;
         // 右向左（倒）移动物体坐标，左向右（顺）移动坐标轴
         const { ele } = info;
@@ -152,56 +159,52 @@ export class App extends GL<infoT, typeof initState> {
         ele.u_shininess = s.shininess;
         const viewPos = [s.x, s.y, s.z];
         ele.u_viewWorldPos = array2Vec3(viewPos);
-        box0.setModelMat(x => {
+        box0.pushMat(x => {
+            box0.popMat();
             mat4.translate(x, x, [50, 50, 50]);
             mat4.rotateX(x, x, degToRad(s.rotateX));
             mat4.rotateY(x, x, degToRad(s.rotateY));
             mat4.translate(x, x, [-50, -50, -50]);// 立方体需要矫正位置，因为球的中心点就在后左底三面相交点
         });
-        box0.worldMat = box0.modelMat;
         let i = 1;
-        const center = vec3.create();
         sphere.children.forEach(x => {
             if (i === 3 + 1) {
-                {
-                    const mat1 = mat4.create();
+                x.pushMat(mat1 => {
                     x.popMat();
                     const r = 600 + 400 * i ** 1.4;
                     const xp = r * Math.cos(s.t / i);
                     const zp = r * Math.sin(s.t / i);
                     mat4.translate(mat1, mat1, [xp, 150, zp]);
                     mat4.rotateY(mat1, mat1, degToRad(s.t * 300));
-                    x.pushMat(mat1);
-                    x.setWorldMatFromTranslate([xp, 150, zp]);
-
-                }
-                const mat = mat4.create();
+                });
                 const c = x.childArray[0];
-                c.popMat();
-                // 抵消父级的自转
-                mat4.rotateY(mat, mat, -degToRad(s.t * 300));
-                // 斜45°公转
-                mat4.rotateZ(mat, mat, degToRad(45));
-                const r = 300;
-                const xp = r * Math.cos(s.t * 10 / i);
-                const zp = r * Math.sin(s.t * 10 / i);
-                mat4.translate(mat, mat, [xp, 0, zp]);
-                // 自转
-                mat4.rotateY(mat, mat, degToRad(s.t * 150));
-                c.pushMat(mat);
-                c.setWorldMatFromTranslate([xp, 0, zp]);
+                c.pushMat(mat => {
+                    const r = 300;
+                    const xp = r * Math.cos(s.t * 10 / i);
+                    const zp = r * Math.sin(s.t * 10 / i);
+                    c.popMat();
+                    // 抵消父级的自转
+                    mat4.rotateY(mat, mat, -degToRad(s.t * 300));
+                    // 斜45°公转
+                    mat4.rotateZ(mat, mat, degToRad(45));
+                    mat4.translate(mat, mat, [xp, 0, zp]);
+                    // 自转
+                    mat4.rotateY(mat, mat, degToRad(s.t * 150));
+                });
             } else {
-                x.popMat();
-                const r = 600 + 400 * i ** 1.4;
-                const xp = r * Math.cos(s.t / i);
-                const zp = r * Math.sin(s.t / i);
-                const mat = mat4.create();
-                x.pushMat(mat4.translate(mat, mat, [xp, 150, zp]));
+                x.pushMat(mat => {
+                    x.popMat();
+                    const r = 600 + 400 * i ** 1.4;
+                    const xp = r * Math.cos(s.t / i);
+                    const zp = r * Math.sin(s.t / i);
+                    mat4.translate(mat, mat, [xp, 150, zp]);
+                });
             }
             i++;
         });
         scene.setViewMat(x => {
             if (s.lookAt) {
+                const center = vec3.create();
                 mat4.getTranslation(center, s.lookAt.finalModelmat);
                 mat4.lookAt(x, viewPos, center, [0, 1, 0]);
             } else {
@@ -212,6 +215,26 @@ export class App extends GL<infoT, typeof initState> {
             }
         });
         scene2.setViewMat(scene.viewMat);
+        //scene3.setViewMat(scene.viewMat);
+
+        {
+            const { cube } = info;
+
+            gl.useProgram(cube.program);
+            BufferData.write(gl, setGeometryT(), 2, cube.loc.a_pos);
+            const mat = mat4.create();
+            mat4.mul(mat, scene.projectionMat, modelMat2WorldMat(scene.viewMat));
+            mat4.invert(mat, mat);
+            cube.u_viewDirectionProjectionInverse = mat;
+            gl.uniform1i(cube.loc.u_skybox, 0);
+
+            // let our quad pass the depth test at 1.0
+            gl.depthFunc(gl.LEQUAL);
+
+            // Draw the geometry.
+            gl.drawArrays(gl.TRIANGLES, 0, 1 * 6);
+        }
+        //gl.uniform1i(info.cube.loc.u_texture, 0);
         return [scene, scene2];
     }
 
@@ -220,31 +243,50 @@ export class App extends GL<infoT, typeof initState> {
 
 
 const createModel = (gl: WebGLRenderingContext, info: infoT) => {
-    const box0 = new Box({ color: 'rand' });
+
+    const box0 = new Box({ color: 0x1453ad });
+    box0.setModelMat(x => mat4.translate(x, x, [400, 0, 0]));
     const sphere = new Sphere({ radius: 400, color: 0x1890ff });
-    sphere.setModelMat(x => {
-        mat4.translate(x, x, [0, 800, 0]);
-    });
+    sphere.setModelMat(x => mat4.translate(x, x, [0, 800, 0]));
     for (let i = 0; i < 6; i++) {
         const box = new Sphere({ radius: 150 + 50 * Math.random(), color: 'rand' });
-        const mat = mat4.create();
-        box.pushMat(mat4.translate(mat, mat, [600 + 400 * i ** 1.4, 150, -100]));
+        box.pushMat(x => mat4.translate(x, x, [600 + 400 * i ** 1.4, 150, -100]));
         sphere.addChild(box);
     }
     const nsp = new Sphere({ radius: 50, color: 'rand' });
-    const mat = mat4.create();
-    nsp.pushMat(mat4.translate(mat, mat, [300, 0, 0]));
-
-    const tsp = sphere.childArray[3];
-    tsp.addChild(nsp);
+    nsp.pushMat(x => mat4.translate(x, x, [300, 0, 0]));
+    sphere.childArray[3].addChild(nsp);
 
     const scene = new Scene(gl, info.ele, box0, sphere);
-    const mesh = new Mesh({ is3d: true, range: 8000, num: 100 });
-    const point = new Point(70, 30, 120);
+    const mesh = new Mesh({ range: 8000, num: 100 });
+    const point = new Point(Array.from(info.ele.u_lightPoint));
     const scene2 = new Scene(gl, info.mesh, mesh, point);
     scene.setProjection(degToRad(45), gl.canvas.width / gl.canvas.height, 1, 8000);
     scene2.setProjectionMat(scene.projectionMat);
-    return { scene, scene2, box0, sphere };
+
+
+    texture_(gl);
+    //onst scene3 = new Scene(gl, info.cube, cube);
+    //scene3.setProjectionMat(scene.projectionMat);
+    return { scene, scene2, box0, sphere, };
+};
+
+const texture_ = (gl: WebGLRenderingContext) => {
+    const texAll = { posX, posY, posZ, negX, negY, negZ };
+    var texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture);
+    Object.entries(texAll)
+        .map(([k, v]) => ({ url: v, target: (Texture as any)[k] as Texture }))
+        .forEach((faceInfo) => {
+            const { target, url } = faceInfo;
+            TexData.write(gl, 512, 512, target, null, texture);
+            const image = new Image();
+            image.src = url;
+            image.addEventListener('load', () => TexData.writeImage(gl, image, target, texture));
+        });
+    gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+
 };
 
 const createInfo = (gl: WebGLRenderingContext) => ({
@@ -262,7 +304,7 @@ const createInfo = (gl: WebGLRenderingContext) => ({
                 u_model: mat4.create(),
                 u_world: mat4.create(),
                 u_lightDirectional: vec3.fromValues(1, 1, 1),
-                u_lightPoint: vec3.fromValues(70, 30, 180),
+                u_lightPoint: vec3.fromValues(470, 30, 180),
                 u_viewWorldPos: vec3.create(),
                 u_shininess: 50,
             }
@@ -286,6 +328,22 @@ const createInfo = (gl: WebGLRenderingContext) => ({
         source: {
             vertex: vPanle,
             fragment: fPanle
+        }
+    }),
+    cube: createProgramInfo({
+        gl,
+        location: {
+            attribute: {
+                a_pos: 2,
+            },
+            uniform: {
+                u_viewDirectionProjectionInverse: mat4.create(),
+                u_skybox: null,
+            }
+        },
+        source: {
+            vertex: vCube,
+            fragment: fCube
         }
     }),
 });
@@ -364,4 +422,38 @@ void main() {
     gl_FragColor = vec4(.2,.2,.2,1);
 }
 `;
+const vCube = `
+attribute vec4 a_pos;
+varying vec4 v_pos;
+void main() {
+  v_pos = a_pos;
+  gl_Position = a_pos;
+  gl_Position.z = 1.0;
+}
+`;
+
+const fCube = `
+precision mediump float;
+
+uniform samplerCube u_skybox;
+uniform mat4 u_viewDirectionProjectionInverse;
+
+varying vec4 v_pos;
+void main() {
+  vec4 t = u_viewDirectionProjectionInverse * v_pos;
+  gl_FragColor = textureCube(u_skybox, normalize(t.xyz / t.w));
+}
+`;
+
+function setGeometryT() {
+    return (
+        [
+            -1, -1,
+            1, -1,
+            -1, 1,
+            -1, 1,
+            1, -1,
+            1, 1,
+        ]);
+}
 
