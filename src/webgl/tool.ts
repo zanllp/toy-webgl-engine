@@ -103,6 +103,40 @@ export const BufferData = {
 		return buf;
 	}
 };
+export enum Texture {
+	posX = 'TEXTURE_CUBE_MAP_POSITIVE_X',
+	negX = 'TEXTURE_CUBE_MAP_NEGATIVE_X',
+	posY = 'TEXTURE_CUBE_MAP_POSITIVE_Y',
+	negY = 'TEXTURE_CUBE_MAP_NEGATIVE_Y',
+	posZ = 'TEXTURE_CUBE_MAP_POSITIVE_Z',
+	negZ = 'TEXTURE_CUBE_MAP_NEGATIVE_Z',
+	T2D = 'TEXTURE_2D',
+}
+export const TexData = {
+	null(gl: WebGLRenderingContext, width: number, height: number, target: Texture, data?: ArrayLike<number>) {
+		return TexData.write(gl, width, height, target, data, null);
+	},
+	/**
+	 * 从新的数据创建buffer
+	 */
+	writeImage(gl: WebGLRenderingContext, image: HTMLImageElement, target: Texture, tex?: WebGLTexture | null) {
+		const texture = (tex === null || tex === undefined) ? gl.createTexture() : tex;
+		const t = target === Texture.T2D ? gl.TEXTURE_2D : gl.TEXTURE_CUBE_MAP;
+		gl.bindTexture(t, texture);
+		gl.texImage2D(gl[target], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+		gl.generateMipmap(t);
+		return texture;
+	},
+
+	write(gl: WebGLRenderingContext, width: number, height: number, target: Texture, data?: ArrayLike<number> | null, tex?: WebGLTexture | null, ) {
+		const texture = (tex === null || tex === undefined) ? gl.createTexture() : tex;
+		const t = target === Texture.T2D ? gl.TEXTURE_2D : gl.TEXTURE_CUBE_MAP;
+		gl.bindTexture(t, texture);
+		gl.texImage2D(gl[target], 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data ? new Uint8Array(data) : null);
+		gl.generateMipmap(t);
+		return texture;
+	},
+};
 export const degToRad = (d: number) => {
 	return d * Math.PI / 180;
 };
@@ -190,6 +224,7 @@ const programInfoFromKey = <A extends constraintNull, U extends constraintAll>({
 				eset(_);
 			},
 			get() {
+				switchProgram();
 				return gl.getUniform(program, uloc as any);
 			}
 		});
@@ -285,26 +320,13 @@ export const randColor = (posData: PosDataType, factor = 1) => {
 /**
  * 计算表面法线
  */
-export const calcNormal = (posData: PosDataType, count: 4 | 6 = 6) => {
-	return posData.map((x) => {
-		const e = [[x[0], x[1], x[2]], [x[3], x[4], x[5]], [x[6], x[7], x[8]]];
-		const v1 = vec3.sub(vec3.create(), e[1], e[0]);
-		const v2 = vec3.sub(vec3.create(), e[2], e[0]);
-		const normal = vec3.cross(vec3.create(), v1, v2);
-		vec3.normalize(normal, normal);
-		const res = Array.from(normal);
-		if (count === 4) {
-
-			return [res, res, res, res]; // 返回4个顶点自己处理
-		} else {
-			return [res, res, res, res, res, res]; // 一个面2个三角形6个点
-		}
-	}).flat(2);
+export const calcNormal = (posData: PosDataType) => {
+	return calcNormalN(posData).flat(2);
 };
 /**
  * 计算表面法线
  */
-export const calcNormalN = (posData: PosDataType, count: 4 | 6 = 6) => {
+export const calcNormalN = (posData: PosDataType) => {
 	return posData.map((x) => {
 		const e = [[x[0], x[1], x[2]], [x[3], x[4], x[5]], [x[6], x[7], x[8]]];
 		const v1 = vec3.sub(vec3.create(), e[1], e[0]);
@@ -312,14 +334,10 @@ export const calcNormalN = (posData: PosDataType, count: 4 | 6 = 6) => {
 		const normal = vec3.cross(vec3.create(), v1, v2);
 		vec3.normalize(normal, normal);
 		const res = Array.from(normal);
-		if (count === 4) {
-
-			return [res, res, res, res]; // 返回4个顶点自己处理
-		} else {
-			return [res, res, res, res, res, res]; // 一个面2个三角形6个点
-		}
+		return [res, res, res, res, res, res]; // 一个面2个三角形6个点
 	});
 };
+
 type Info = {
 	a_pos: attrResType;
 	a_normal?: attrResType;
@@ -356,7 +374,6 @@ export class Model {
 	public readonly matrixStack = new Array<mat4>();
 	public parent?: Model;
 	public modelMat = mat4.create();
-	public worldMat = mat4.create();
 	public color = new Array<number>();
 	static memoPosfNormal = new Map<PosDataType, { d: Array<number>, n: Array<number> }>();
 	get childArray() {
@@ -388,10 +405,30 @@ export class Model {
 		}
 		return this.modelMat;
 	}
-	public pushMat(mat: mat4) {
-		this.matrixStack.push(mat);
-		mat4.mul(this.modelMat, this.modelMat, mat);
+	/**
+	 * 压入一个矩阵,右乘当前模型矩阵
+	 * @param mat 当为mat4类型直接右乘。当为函数会提供一个单位矩阵以供修改
+	 */
+	public pushMat(mat?: ((_: mat4) => void | mat4) | mat4) {
+		if (mat === undefined) { // 压入一个占位置的单位矩阵
+			this.matrixStack.push(mat4.create());
+			return;
+		}
+		let _mat: mat4 = mat4.create();
+		if (typeof mat === 'function') {
+			const res = mat(_mat);
+			if (res) {
+				_mat = res;
+			}
+		} else {
+			_mat = mat;
+		}
+		this.matrixStack.push(_mat);
+		mat4.mul(this.modelMat, this.modelMat, _mat);
 	}
+	/**
+	 * 弹出栈，模型矩阵返回上次压入前的状态
+	 */
 	public popMat() {
 		const mat = this.matrixStack.pop();
 		if (mat) {
@@ -399,14 +436,7 @@ export class Model {
 			mat4.mul(this.modelMat, this.modelMat, mat);
 		}
 	}
-	public setWorldMatFromTranslate(translate?: Array<number>) {
-		if (!translate) {
-			this.worldMat = this.modelMat;
-			return;
-		}
-		const invert = mat4.invert(mat4.create(), mat4.fromTranslation(mat4.create(), translate));
-		mat4.mul(this.worldMat, this.modelMat, invert!);
-	}
+
 	public get finalModelmat(): mat4 {
 		if (this.parent) {
 			const mat = mat4.create();
@@ -433,7 +463,7 @@ const r2t = (rect: Array<number>) => {
 	return rect;
 };
 export type colorType = number[] | number;
-export type cubeColorType = { front: colorType; back: colorType; right: colorType; left: colorType; top: colorType; bottom: colorType; };
+export type cubeColorType = { front: colorType; back: colorType; right: colorType; left: colorType; top: colorType; bottom: colorType; } | number;
 export class Box extends Model {
 	public constructor({ x = 100, y = 100, z = 100, color = 'none' }: {
 		x?: number; y?: number; z?: number; color?: 'none' | 'rand' | cubeColorType
@@ -448,7 +478,6 @@ export class Box extends Model {
 					0, y, z,
 					0, 0, z,
 					x, 0, z,]),
-				// back
 				r2t([x, y, 0,
 					x, 0, 0,
 					0, 0, 0,
@@ -481,22 +510,36 @@ export class Box extends Model {
 		if (color === 'rand') {
 			this.fillRandColor();
 		}
-		if (typeof color === 'object') {
+		if (typeof color === 'object' || typeof color === 'number') {
 			this.fillColor(color);
 		}
 	}
 	static memoPos = new Map<string, PosDataType>();
-	public fillColor({ front, back, right, left, top, bottom }: cubeColorType) {
-		this.color = [front, back, right, left, top, bottom].map(color => {
-			let c: Array<number>;
-			if (color instanceof Array) {
-				c = color;
-			} else {
-				c = num2color(color);
-			}
-			c = c.map(c => c / 255);
-			return [c, c, c, c, c, c];
-		}).flat(2);
+	public fillColor(color: cubeColorType | number) {
+		if (typeof color === 'object') {
+			const { front, back, right, left, top, bottom } = color;
+			this.color = [front, back, right, left, top, bottom].map(color => {
+				let c: Array<number>;
+				if (color instanceof Array) {
+					c = color;
+				} else {
+					c = num2color(color);
+				}
+				c = c.map(c => c / 255);
+				return [c, c, c, c, c, c];
+			}).flat(2);
+		} else {
+			const vec3C = num2color(color);
+			this.fillColor({
+				front: vec3C,
+				back: vec3C,
+				right: vec3C,
+				left: vec3C,
+				top: vec3C,
+				bottom: vec3C
+			});
+		}
+
 	}
 }
 
@@ -625,7 +668,7 @@ export class Sphere extends Model {
 }
 
 export class Mesh extends Model {
-	public constructor({ range = 1500, num = 10, is3d = false }: { range?: number; num?: number; is3d?: boolean; }) {
+	public constructor({ range = 1500, num = 10, is3d = true }: { range?: number; num?: number; is3d?: boolean; }) {
 		const data = [] as number[][];
 		// 0 -> 1
 		for (let i = 0; i < num + 1; i++) {
@@ -654,8 +697,8 @@ export class Mesh extends Model {
 }
 
 export class Point extends Model {
-	public constructor(x: number, y: number, z: number) {
-		super([[x, y, z]]);
+	public constructor(vec3: Array<number>) {
+		super([vec3]);
 	}
 	public render(gl: WebGLRenderingContext) {
 		gl.drawArrays(gl.POINTS, 0, 1);
@@ -699,7 +742,7 @@ export class Scene<T extends Info> {
 	public projectionMat = mat4.create();
 	public viewMat = mat4.create();
 	public models = new Array<Model>();
-	public render(next?: { modelMat: mat4, worldMat: mat4, child: Model }) {
+	public render(next?: { modelMat: mat4,  child: Model }) {
 		const { info, gl } = this;
 		if (next === undefined) {
 			info.u_proj = this.projectionMat;
@@ -709,7 +752,7 @@ export class Scene<T extends Info> {
 					info.u_model = x.modelMat;
 				}
 				if ('u_world' in info.src) {
-					info.u_world = x.worldMat;
+					info.u_world = modelMat2WorldMat(x.modelMat);
 				}
 				if ('a_color' in info.src) { // 查看是否定义了这个attribute，比info.a_color速度更快
 					info.a_color!.set(x.color, x);
@@ -721,16 +764,14 @@ export class Scene<T extends Info> {
 				x.render(gl);
 				x.children.forEach(y => this.render({
 					modelMat: x.modelMat,
-					worldMat: x.worldMat,
 					child: y
 				}));
 			});
 		} else {
 			const x = next.child;
 			const nextModelMat = mat4.mul(mat4.create(), next.modelMat, x.modelMat);
-			const nextWorldMat = mat4.mul(mat4.create(), next.worldMat, x.worldMat);
 			info.u_model = nextModelMat;
-			info.u_world = nextWorldMat;
+			info.u_world = modelMat2WorldMat(nextModelMat);
 			if ('a_color' in info.src) { // 查看是否定义了这个attribute，比info.a_color速度更快
 				info.a_color!.set(x.color, x);
 			}
@@ -741,7 +782,6 @@ export class Scene<T extends Info> {
 			x.render(gl);
 			x.children.forEach(y => this.render({
 				modelMat: nextModelMat,
-				worldMat: nextWorldMat,
 				child: y
 			}));
 		}
@@ -954,4 +994,11 @@ export const num2color = (c: number) => {
 
 export const getClassName = (t: any) => {
 	return t.__proto__.constructor.name as string;
+};
+export const modelMat2WorldMat = (modelMat: mat4) => {
+	const worldMat = mat4.clone(modelMat);
+	worldMat[12] = 0;
+	worldMat[13] = 0;
+	worldMat[14] = 0;
+	return worldMat;
 };
