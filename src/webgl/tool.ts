@@ -349,26 +349,45 @@ type Info = {
 	src: any,
 	program: WebGLProgram;
 };
-
+export type SetMatType = ((mat: mat4) => mat4 | void) | mat4;
+const createSetMatFn = <T>(target: keyof T) => {
+	return function (this: T, fn: SetMatType) {
+		const t = this as any;
+		if (typeof fn === 'function') { // 如果是函数
+			const mat = mat4.create();
+			const res = fn(mat);
+			if (res) { // 如果函数有返回值
+				t[target] = res;
+			} else {
+				t[target] = mat;
+			}
+		} else { // 如果是矩阵类型
+			t[target] = fn;
+		}
+		return t[target] as mat4;
+	};
+};
 export class Model {
 	constructor(data: PosDataType, normal?: number[]) {
 		this.data = data;
+		this.setModelMat = createSetMatFn<Model>('modelMat');
 		if (Model.memoPosfNormal.has(this.data)) {
 			const d = Model.memoPosfNormal.get(this.data);
-			this.dataFlat = d!.d;
+			this.position = d!.d;
 			this.normal = d!.n;
 		} else {
-			this.dataFlat = data.flat();
+			this.position = data.flat();
 			if (normal) {
 				this.normal = normal;
 			} else {
 				this.normal = calcNormal(this.data);
 			}
-			Model.memoPosfNormal.set(this.data, { d: this.dataFlat, n: this.normal });
+			Model.memoPosfNormal.set(this.data, { d: this.position, n: this.normal });
 		}
 	}
+	public type ='Model';
 	public readonly data: PosDataType;
-	public readonly dataFlat: Array<number>;
+	public readonly position: Array<number>;
 	public readonly normal: Array<number>;
 	public readonly children = new Set<Model>();
 	public readonly matrixStack = new Array<mat4>();
@@ -389,27 +408,16 @@ export class Model {
 		this.color = randColor(this.data, factor);
 	}
 	public render(gl: WebGLRenderingContext) {
-		gl.drawArrays(gl.TRIANGLES, 0, this.dataFlat.length / 3);
+		gl.drawArrays(gl.TRIANGLES, 0, this.position.length / 3);
 	}
-	public setModelMat(fn: ((_: mat4) => mat4 | void) | mat4) {
-		if (typeof fn === 'function') {
-			const mat = mat4.create();
-			const res = fn(mat);
-			if (res) {
-				this.modelMat = res;
-			} else {
-				this.modelMat = mat;
-			}
-		} else {
-			this.modelMat = fn;
-		}
-		return this.modelMat;
+	public setModelMat(fn: SetMatType): mat4 {
+		throw new Error('Method not implemented.');
 	}
 	/**
 	 * 压入一个矩阵,右乘当前模型矩阵
 	 * @param mat 当为mat4类型直接右乘。当为函数会提供一个单位矩阵以供修改
 	 */
-	public pushMat(mat?: ((_: mat4) => void | mat4) | mat4) {
+	public pushMat(mat?: SetMatType) {
 		if (mat === undefined) { // 压入一个占位置的单位矩阵
 			this.matrixStack.push(mat4.create());
 			return;
@@ -513,6 +521,7 @@ export class Box extends Model {
 		if (typeof color === 'object' || typeof color === 'number') {
 			this.fillColor(color);
 		}
+		this.type = 'Box';
 	}
 	static memoPos = new Map<string, PosDataType>();
 	public fillColor(color: cubeColorType | number) {
@@ -646,6 +655,7 @@ export class Sphere extends Model {
 		} else if ((color instanceof Array) || (typeof color === 'number')) {
 			this.fillColor(color);
 		}
+		this.type = 'Sphere';
 	}
 	static memoPos = new Map<string, { data: PosDataType, normal: Array<number> }>();
 	/**
@@ -667,34 +677,7 @@ export class Sphere extends Model {
 	}
 }
 
-export class Mesh extends Model {
-	public constructor({ range = 1500, num = 10, is3d = true }: { range?: number; num?: number; is3d?: boolean; }) {
-		const data = [] as number[][];
-		// 0 -> 1
-		for (let i = 0; i < num + 1; i++) {
-			const leftRow = [0, i / num];
-			const rightRow = [1, i / num];
-			const topCol = [i / num, 1];
-			const bottomCol = [i / num, 0];
-			data.push(leftRow, rightRow, topCol, bottomCol);
-		}
-		const dst = data.map((x) => {
-			x[0] -= 0.5;
-			x[1] -= 0.5;
-			if (is3d) {
-				x[2] = x[1];
-				x[1] = 0;
-			}
-			return x.map(x => x *= range);
-		});
-		super(dst);
-		this.size = is3d ? 3 : 2;
-	}
-	public size: number;
-	public render(gl: WebGLRenderingContext) {
-		gl.drawArrays(gl.LINES, 0, this.dataFlat.length / this.size);
-	}
-}
+
 
 export class Point extends Model {
 	public constructor(vec3: Array<number>) {
@@ -715,18 +698,20 @@ export class Assembly extends Model {
 			this.color = [...this.color, ...i.color];
 			if (!mat4.equals(i.modelMat, mat4.create())) {
 				for (let ii = 0; ii < i.normal.length; ii += 3) {
-					const pos = vec3.fromValues(i.dataFlat[ii], i.dataFlat[ii + 1], i.dataFlat[ii + 2]);
-					this.dataFlat.push(...Array.from(vec3.transformMat4(vec3.create(), pos, i.modelMat)));
-					const normal = vec3.fromValues(i.normal[ii], i.normal[ii + 1], i.normal[ii + 2]);
+					const _pos = i.position;
+					const pos = vec3.fromValues(_pos[ii], _pos[ii + 1], _pos[ii + 2]);
+					this.position.push(...Array.from(vec3.transformMat4(vec3.create(), pos, i.modelMat)));
+					const _nor = i.normal;
+					const normal = vec3.fromValues(_nor[ii], _nor[ii + 1], _nor[ii + 2]);
 					this.normal.push(...Array.from(vec3.transformMat4(vec3.create(), normal, i.modelMat)));
 				}
 			} else {
-				this.dataFlat.push(...i.dataFlat);
+				this.position.push(...i.position);
 				this.normal.push(...i.normal);
 			}
 		}
 	}
-	public readonly dataFlat = new Array<number>();
+	public readonly position = new Array<number>();
 	public readonly normal = new Array<number>();
 	public readonly color = new Array<number>();
 }
@@ -742,7 +727,7 @@ export class Scene<T extends Info> {
 	public projectionMat = mat4.create();
 	public viewMat = mat4.create();
 	public models = new Array<Model>();
-	public render(next?: { modelMat: mat4,  child: Model }) {
+	public render(next?: { modelMat: mat4, child: Model }) {
 		const { info, gl } = this;
 		if (next === undefined) {
 			info.u_proj = this.projectionMat;
@@ -760,7 +745,7 @@ export class Scene<T extends Info> {
 				if ('a_normal' in info.src) {
 					info.a_normal!.set(x.normal, x);
 				}
-				info.a_pos.set(x.dataFlat, x);
+				info.a_pos.set(x.position, x);
 				x.render(gl);
 				x.children.forEach(y => this.render({
 					modelMat: x.modelMat,
@@ -778,7 +763,7 @@ export class Scene<T extends Info> {
 			if ('a_normal' in info.src) {
 				info.a_normal!.set(x.normal, x);
 			}
-			info.a_pos.set(x.dataFlat, x);
+			info.a_pos.set(x.position, x);
 			x.render(gl);
 			x.children.forEach(y => this.render({
 				modelMat: nextModelMat,
@@ -788,38 +773,6 @@ export class Scene<T extends Info> {
 	}
 	public addModel(...model: Model[]) {
 		this.models.push(...model);
-	}
-	public setProjectionMat(fn: ((_: mat4) => mat4 | void) | mat4) {
-		if (typeof fn === 'function') {
-			const mat = mat4.create();
-			const res = fn(mat);
-			if (res) {
-				this.projectionMat = res;
-			} else {
-				this.projectionMat = mat;
-			}
-		} else {
-			this.projectionMat = fn;
-		}
-		return this.projectionMat;
-	}
-	public setProjection(fovy: number, aspect: number, near: number, far: number) {
-		this.setProjectionMat(x => mat4.perspective(x, fovy, aspect, near, far));
-		return this.projectionMat;
-	}
-	public setViewMat(fn: ((_: mat4) => mat4 | void) | mat4) {
-		if (typeof fn === 'function') {
-			const mat = mat4.create();
-			const res = fn(mat);
-			if (res) {
-				this.viewMat = res;
-			} else {
-				this.viewMat = mat;
-			}
-		} else {
-			this.viewMat = fn;
-		}
-		return this.viewMat;
 	}
 }
 
@@ -875,13 +828,16 @@ export const createKeyListenerTask = <V>(actions: { [x: string]: actionsType<V> 
 		});
 	};
 };
-
-export class GL<T extends { [x: string]: Info }, S> {
+export type projParamsType = { fovy: number, aspect: number, near: number, far: number } |
+	((gl: WebGLRenderingContext) => ({ fovy: number, aspect: number, near: number, far: number }));
+export class GL<T extends { [x: string]: Info } = any, S = any> implements IRenderAble {
 	constructor(gl: WebGLRenderingContext, info: T, state: S) {
 		this.gl = gl;
 		this.info = info;
 		this.state = state;
 		this.setState = createSetStateFn(gl, info, this.renderFrame.bind(this), this);
+		this.setProjectionMat = createSetMatFn<GL>('projectionMat');
+		this.setViewMat = createSetMatFn<GL>('viewMat');
 		this.loop.renderTask = this.renderFrame.bind(this);
 		this.resize();
 	}
@@ -889,7 +845,11 @@ export class GL<T extends { [x: string]: Info }, S> {
 	public state: Readonly<S>;
 	public loop = new RenderLoop();
 	public info: T;
-	public render(): Scene<Info>[] | void {
+	public projectionMat = mat4.create();
+	public viewMat = mat4.create();
+	public projParams?: projParamsType;
+	public renderQuene = new Array<IRenderAble>();
+	public render(): IRenderAble[] | void {
 		throw new Error('Method not implemented.');
 	}
 	public setState(s: setStateType<S>): S {
@@ -904,31 +864,58 @@ export class GL<T extends { [x: string]: Info }, S> {
 	}
 	public renderFrame() {
 		this.clear();
-		const res = this.render();
-		if (res) {
-			res.forEach(x => {
-				x.render();
-			});
-		}
+		this.render();
+		this.renderQuene.forEach(x => {
+			x.viewMat = this.viewMat;
+			x.projectionMat = this.projectionMat;
+			x.render();
+		});
 	}
 	public resize() {
 		const { gl } = this;
 		resize(gl.canvas);
 		gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+		// 如果已设置投影矩阵，且其参数类型为函数，则重新获取设置一次
+		if (this.projParams && typeof this.projParams === 'function') {
+			this.setProjection(this.projParams);
+		}
+		if (this.loop.state === 'run') {
+			this.renderFrame();
+		}
 	}
 
+	public setProjection(p: projParamsType) {
+		this.projParams = p;
+		if (typeof p === 'function') {
+			const _p = p(this.gl);
+			this.setProjectionMat(x => mat4.perspective(x, _p.fovy, _p.aspect, _p.near, _p.far));
+		} else {
+			const _p = p;
+			this.setProjectionMat(x => mat4.perspective(x, _p.fovy, _p.aspect, _p.near, _p.far));
+		}
+	}
+
+	public setViewMat(fn: SetMatType): mat4 {
+		throw new Error('Method not implemented.');
+	}
+
+	public setProjectionMat(fn: SetMatType): mat4 {
+		throw new Error('Method not implemented.');
+	}
 }
 
 export class RenderLoop {
-	public rqaId: number | undefined;
+	public rqaId?: number;
 	public fps: number = 0;
 	public averageFps: number = -1;
+	public state: 'run' | 'stop' = 'stop';
 	public lastRecTime = 0;
 	public count: number = 0;
-	public renderTask: ((t: number) => any) | undefined;
+	public renderTask?: (t: number) => any;
 	public task = new Array<(t: number) => any>();
 	public onceTask = new Array<(t: number) => any>();
 	public run(...tasks: Array<(t: number) => any>) {
+		this.state = 'run';
 		this.addTask(...tasks);
 		let lastT = Date.now();
 		const loop = (t: number) => {
@@ -946,6 +933,7 @@ export class RenderLoop {
 		this.rqaId = requestAnimationFrame(loop);
 	}
 	public stop() {
+		this.state = 'stop';
 		if (this.rqaId !== undefined) {
 			cancelAnimationFrame(this.rqaId);
 		}
@@ -1002,3 +990,171 @@ export const modelMat2WorldMat = (modelMat: mat4) => {
 	worldMat[14] = 0;
 	return worldMat;
 };
+
+const createPre = (gl: WebGLRenderingContext) => createProgramInfo({
+	gl,
+	location: {
+		attribute: {
+			a_pos: 2,
+		},
+		uniform: {
+			u_viewDirectionProjectionInverse: mat4.create(),
+			u_skybox: null,
+		}
+	},
+	source: {
+		vertex: `
+		attribute vec4 a_pos;
+		varying vec4 v_pos;
+		void main() {
+		  v_pos = a_pos;
+		  gl_Position = a_pos;
+		  gl_Position.z = 1.0;
+		}
+			`,
+		fragment: `	
+		precision mediump float;
+		
+		uniform samplerCube u_skybox;
+		uniform mat4 u_viewDirectionProjectionInverse;
+		
+		varying vec4 v_pos;
+		void main() {
+		  vec4 t = u_viewDirectionProjectionInverse * v_pos;
+		  gl_FragColor = textureCube(u_skybox, normalize(t.xyz / t.w));
+		}
+		`
+	}
+});
+
+export class SkyBox implements IRenderAble {
+	public constructor(gl: WebGLRenderingContext,texAll: { posX: string; posY: string; posZ: string; negX: string; negY: string; negZ: string; }) {
+		this.gl = gl;
+		this.info = createPre(gl);
+		this.loadTex(texAll);
+	}
+
+	projectionMat: mat4 = mat4.create();
+	viewMat: mat4 = mat4.create();
+	public data = [
+		-1, -1,
+		1, -1,
+		-1, 1,
+		-1, 1,
+		1, -1,
+		1, 1,
+	];
+	public gl: WebGLRenderingContext;
+	public buf?: WebGLBuffer | null;
+	public info: ReturnType<typeof createPre>;
+	public render() {
+		const { gl, info } = this;
+		info.a_pos.set(this.data, this);
+		const mat = mat4.create();
+		mat4.mul(mat, this.projectionMat, modelMat2WorldMat(this.viewMat));
+		mat4.invert(mat, mat);
+		info.u_viewDirectionProjectionInverse = mat;
+		gl.uniform1i(info.loc.u_skybox, 0);
+
+		// let our quad pass the depth test at 1.0
+		gl.depthFunc(gl.LEQUAL);
+		// Draw the geometry.
+		gl.drawArrays(gl.TRIANGLES, 0, 1 * 6);
+	}
+	loadTex(texAll: { posX: string; posY: string; posZ: string; negX: string; negY: string; negZ: string; }) {
+		const { gl } = this;
+		var texture = gl.createTexture();
+		gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture);
+		Object.entries(texAll)
+			.map(([k, v]) => ({ url: v, target: (Texture as any)[k] as Texture }))
+			.forEach((faceInfo) => {
+				const { target, url } = faceInfo;
+				TexData.write(gl, 512, 512, target, null, texture);
+				const image = new Image();
+				image.src = url;
+				image.addEventListener('load', () => TexData.writeImage(gl, image, target, texture));
+			});
+		gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
+		gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+	}
+
+
+}
+
+export interface IRenderAble {
+	projectionMat: mat4 | undefined;
+	viewMat: mat4 | undefined;
+	gl: WebGLRenderingContext;
+	render(): void;
+}
+
+
+const createMeshLineInfo = (gl: WebGLRenderingContext) => createProgramInfo({
+	gl,
+	location: {
+		attribute: {
+			a_pos: 3
+		},
+		uniform: {
+			u_proj: mat4.create(),
+			u_view: mat4.create(),
+		}
+	},
+	source: {
+		vertex: `
+		uniform mat4 u_proj;
+		uniform mat4 u_view;
+		attribute vec3 a_pos;
+		void main() {
+			vec4 pos = vec4(a_pos,1);
+			gl_Position =  u_proj * u_view * pos;
+			gl_PointSize = 8.;
+		}`,
+		fragment: `
+		precision mediump float; 
+		void main() {
+			gl_FragColor = vec4(1.,1.,1.,1);
+		}
+		`
+	}
+});
+export class MeshLine implements IRenderAble {
+	public constructor({ range = 1500, num = 10, is3d = true, gl }:
+		{ range?: number; num?: number; is3d?: boolean; gl: WebGLRenderingContext }) {
+		const data = [] as number[][];
+		// 0 -> 1
+		for (let i = 0; i < num + 1; i++) {
+			const leftRow = [0, i / num];
+			const rightRow = [1, i / num];
+			const topCol = [i / num, 1];
+			const bottomCol = [i / num, 0];
+			data.push(leftRow, rightRow, topCol, bottomCol);
+		}
+		const dst = data.map((x) => {
+			x[0] -= 0.5;
+			x[1] -= 0.5;
+			if (is3d) {
+				x[2] = x[1];
+				x[1] = 0;
+			}
+			return x.map(x => x *= range);
+		});
+		this.size = is3d ? 3 : 2;
+		this.gl = gl;
+		this.info = createMeshLineInfo(gl);
+		this.position = dst.flat(1);
+	}
+	public size: number;
+	projectionMat: mat4 = mat4.create();
+	viewMat: mat4 = mat4.create();
+	gl: WebGLRenderingContext;
+	info: ReturnType<typeof createMeshLineInfo>;
+	position: Array<number>;
+	public render() {
+		const { gl, info } = this;
+		info.u_proj = this.projectionMat;
+		info.u_view = this.viewMat;
+		info.a_pos.set(this.position, this);
+		gl.drawArrays(gl.LINES, 0, this.position.length / this.size);
+	}
+}
