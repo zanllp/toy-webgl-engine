@@ -6,7 +6,7 @@ import posX from './sky/pos-x.jpg';
 import posY from './sky/pos-y.jpg';
 import posZ from './sky/pos-z.jpg';
 // tslint:disable-next-line: max-line-length
-import { array2Vec3, Box, BufferData, createKeyListenerTask, createProgramInfo, degToRad, getClassName, GL, Mesh, Model, modelMat2WorldMat, modifyWindow, Point, printMat, Scene, setCSS, Sphere, TexData, Texture } from './tool';
+import { array2Vec3, Box, createKeyListenerTask, createProgramInfo, degToRad, getClassName, GL, MeshLine, Model, modifyWindow, Point, printMat, Scene, setCSS, Sphere, TexData, Texture, SkyBox, createSetStateFn } from './tool';
 import { ui } from './ui';
 
 modifyWindow({ mat3, printMat, vec3, vec4, mat2, mat4, d2r: degToRad });
@@ -30,17 +30,12 @@ const initState = {
 
 };
 
-export class App extends GL<any, typeof initState> {
+export class App extends GL<infoT, typeof initState> {
     constructor(gl: WebGLRenderingContext) {
         super(gl, createInfo(gl), initState);
         const setS = this.setState;
-        window.addEventListener('resize', () => {
-            const { gl, model } = this;
-            this.resize();
-            model.scene.setProjection(degToRad(45), gl.canvas.width / gl.canvas.height, 1, 4000);
-            model.scene2.setProjectionMat(model.scene.projectionMat);
-            this.renderFrame();
-        });
+        this.setProjection(gl => ({ fovy: degToRad(45), aspect: gl.canvas.width / gl.canvas.height, near: 1, far: 8000 }));
+        window.addEventListener('resize', this.resize.bind(this));
         document.addEventListener('wheel', x => {
             const direction = x.deltaY / Math.abs(x.deltaY);
             return setS(_ => ({ scale: _.scale * (1 + (direction * .1)) }));
@@ -80,77 +75,18 @@ export class App extends GL<any, typeof initState> {
         });
         this.loop.addTask(t => setS({ action: 'incr', key: 't', value: t / 5000 }));
         this.loop.addTask(keyTask);
-        const uic = document.querySelector('#dashboard')!;
-        const fps = document.createElement('span');
-        const state = document.createElement('span');
-        setCSS({
-            whiteSpace: 'pre',
-            display: 'block',
-            textAlign: 'right',
-            margin: '8px'
-        }, fps);
-        setCSS({
-            whiteSpace: 'pre',
-            display: 'block',
-            margin: '8px'
-        }, state);
-        uic.appendChild(fps);
-
-
-        const createLi = (s: string, target: any = null) => {
-            const m = document.createElement('li');
-            m.innerText = s;
-            m.className = 'model-select';
-            m.addEventListener('click', e => {
-                this.setState({ lookAt: target });
-                e.stopPropagation();
-            });
-            return m;
-        };
-        const tree = (f: Element, models: any[]) => {
-            const s = document.createElement('ul');
-            f.appendChild(s);
-            models.forEach(v => {
-                if (!(v instanceof Scene)) {
-                    const m = createLi(getClassName(v), v);
-                    s.appendChild(m);
-                    tree(m, (v as any).children);
-                }
-            });
-            return s;
-        };
-        const unSelect = createLi('不选择');
-        const selectEle = tree(uic, Object.values(this.model));
-        selectEle.appendChild(unSelect);
-        const hint = document.createElement('span');
-        hint.innerText = '选择注视目标';
-        selectEle.insertBefore(hint, selectEle.firstChild);
-
-        const s = this.state;
-        ui.setupSlider('#rotate-y', { value: s.rotateY, slide: (x: any) => setS({ rotateY: x }), min: -360, max: 360 });
-        ui.setupSlider('#rotate-x', { value: s.rotateX, slide: (x: any) => setS({ rotateX: x }), min: -360, max: 360 });
-        ui.setupSlider('#range-shininess', { value: s.shininess, slide: (x: any) => setS({ shininess: x }), min: 1, max: 100, step: 1 });
-
-        ui.container!.append(state);
-        setInterval(() => {
-            const { loop } = this;
-            fps.innerText =
-                `fps:${loop.fps.toFixed(2)}
-平均fps:${loop.averageFps.toFixed(2)}`;
-            const { x, y, z, light, scale } = this.state;
-            const lookAt = this.state.lookAt !== null ? getClassName(this.state.lookAt) : null;
-            state.innerText = `部分状态 : ${JSON.stringify({ x, y, z, light, scale, lookAt }, null, 4)}`;
-        }, 300);
+        this.createUi();
+        this.renderQuene.push(this.model.scene, new MeshLine({ range: 16000, num: 100, gl }), new SkyBox(gl, { posX, posY, posZ, negX, negY, negZ }));
     }
     public model = createModel(this.gl, this.info);
     public clicked = false;
 
-    render() {
-        const { info, gl } = this;
+    public render() {
+        const { info } = this;
         const s = this.state;
         // 右向左（倒）移动物体坐标，左向右（顺）移动坐标轴
         const { ele } = info;
-        const { scene, scene2, box0, sphere } = this.model;
+        const { box0, sphere } = this.model;
         const lightMat = mat4.create();
         mat4.fromYRotation(lightMat, degToRad(1));
         const res = vec3.transformMat4(vec3.create(), s.light, lightMat);
@@ -202,7 +138,7 @@ export class App extends GL<any, typeof initState> {
             }
             i++;
         });
-        scene.setViewMat(x => {
+        this.setViewMat(x => {
             if (s.lookAt) {
                 const center = vec3.create();
                 mat4.getTranslation(center, s.lookAt.finalModelmat);
@@ -214,28 +150,67 @@ export class App extends GL<any, typeof initState> {
                 mat4.scale(x, x, [s.scale, s.scale, s.scale]);
             }
         });
-        scene2.setViewMat(scene.viewMat);
-        //scene3.setViewMat(scene.viewMat);
+    }
 
-        {
-            const { cube } = info;
-
-            gl.useProgram(cube.program);
-            BufferData.write(gl, setGeometryT(), 2, cube.loc.a_pos);
-            const mat = mat4.create();
-            mat4.mul(mat, scene.projectionMat, modelMat2WorldMat(scene.viewMat));
-            mat4.invert(mat, mat);
-            cube.u_viewDirectionProjectionInverse = mat;
-            gl.uniform1i(cube.loc.u_skybox, 0);
-
-            // let our quad pass the depth test at 1.0
-            gl.depthFunc(gl.LEQUAL);
-
-            // Draw the geometry.
-            gl.drawArrays(gl.TRIANGLES, 0, 1 * 6);
-        }
-        //gl.uniform1i(info.cube.loc.u_texture, 0);
-        return [scene, scene2];
+    private createUi() {
+        const setS = this.setState;
+        const uic = document.querySelector('#dashboard')!;
+        const fps = document.createElement('span');
+        const state = document.createElement('span');
+        setCSS({
+            whiteSpace: 'pre',
+            display: 'block',
+            textAlign: 'right',
+            margin: '8px'
+        }, fps);
+        setCSS({
+            whiteSpace: 'pre',
+            display: 'block',
+            margin: '8px'
+        }, state);
+        uic.appendChild(fps);
+        const createLi = (s: string, target: any = null) => {
+            const m = document.createElement('li');
+            m.innerText = s;
+            m.className = 'model-select';
+            m.addEventListener('click', e => {
+                this.setState({ lookAt: target });
+                e.stopPropagation();
+            });
+            return m;
+        };
+        const tree = (f: Element, models: any[]) => {
+            const s = document.createElement('ul');
+            f.appendChild(s);
+            models.forEach((v, i) => {
+                if (v instanceof Model) {
+                    const m = createLi(`${v.type}-${i}`, v);
+                    s.appendChild(m);
+                    tree(m, v.childArray);
+                }
+            });
+            return s;
+        };
+        const unSelect = createLi('不选择');
+        const selectEle = tree(uic, Object.values(this.model));
+        selectEle.appendChild(unSelect);
+        const hint = document.createElement('span');
+        hint.innerText = '选择注视目标';
+        selectEle.insertBefore(hint, selectEle.firstChild);
+        const s = this.state;
+        ui.setupSlider('#rotate-y', { value: s.rotateY, slide: (x: any) => setS({ rotateY: x }), min: -360, max: 360 });
+        ui.setupSlider('#rotate-x', { value: s.rotateX, slide: (x: any) => setS({ rotateX: x }), min: -360, max: 360 });
+        ui.setupSlider('#range-shininess', { value: s.shininess, slide: (x: any) => setS({ shininess: x }), min: 1, max: 100, step: 1 });
+        ui.container!.append(state);
+        setInterval(() => {
+            const { loop } = this;
+            fps.innerText =
+                `fps:${loop.fps.toFixed(2)}
+平均fps:${loop.averageFps.toFixed(2)}`;
+            const { x, y, z, light, scale } = this.state;
+            const lookAt = this.state.lookAt !== null ? getClassName(this.state.lookAt) : null;
+            state.innerText = `部分状态 : ${JSON.stringify({ x, y, z, light, scale, lookAt }, null, 4)}`;
+        }, 300);
     }
 
 }
@@ -258,36 +233,12 @@ const createModel = (gl: WebGLRenderingContext, info: infoT) => {
     sphere.childArray[3].addChild(nsp);
 
     const scene = new Scene(gl, info.ele, box0, sphere);
-    const mesh = new Mesh({ range: 8000, num: 100 });
-    const point = new Point(Array.from(info.ele.u_lightPoint));
-    const scene2 = new Scene(gl, info.mesh, mesh, point);
-    scene.setProjection(degToRad(45), gl.canvas.width / gl.canvas.height, 1, 8000);
-    scene2.setProjectionMat(scene.projectionMat);
-
-
-    texture_(gl);
     //onst scene3 = new Scene(gl, info.cube, cube);
     //scene3.setProjectionMat(scene.projectionMat);
-    return { scene, scene2, box0, sphere, };
+    return { scene, box0, sphere, };
 };
 
-const texture_ = (gl: WebGLRenderingContext) => {
-    const texAll = { posX, posY, posZ, negX, negY, negZ };
-    var texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture);
-    Object.entries(texAll)
-        .map(([k, v]) => ({ url: v, target: (Texture as any)[k] as Texture }))
-        .forEach((faceInfo) => {
-            const { target, url } = faceInfo;
-            TexData.write(gl, 512, 512, target, null, texture);
-            const image = new Image();
-            image.src = url;
-            image.addEventListener('load', () => TexData.writeImage(gl, image, target, texture));
-        });
-    gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
 
-};
 
 const createInfo = (gl: WebGLRenderingContext) => ({
     ele: createProgramInfo({
@@ -312,38 +263,6 @@ const createInfo = (gl: WebGLRenderingContext) => ({
         source: {
             vertex: vEle,
             fragment: fEle
-        }
-    }),
-    mesh: createProgramInfo({
-        gl,
-        location: {
-            attribute: {
-                a_pos: 3
-            },
-            uniform: {
-                u_proj: mat4.create(),
-                u_view: mat4.create(),
-            }
-        },
-        source: {
-            vertex: vPanle,
-            fragment: fPanle
-        }
-    }),
-    cube: createProgramInfo({
-        gl,
-        location: {
-            attribute: {
-                a_pos: 2,
-            },
-            uniform: {
-                u_viewDirectionProjectionInverse: mat4.create(),
-                u_skybox: null,
-            }
-        },
-        source: {
-            vertex: vCube,
-            fragment: fCube
         }
     }),
 });
@@ -406,54 +325,4 @@ void main() {
     gl_FragColor.rgb += reflectLight(light, normal, surface2View, surface2PointLight); 
 }
 `;
-
-const vPanle = `
-uniform mat4 u_proj;
-uniform mat4 u_view;
-attribute vec3 a_pos;
-void main() {
-    vec4 pos = vec4(a_pos,1);
-    gl_Position =  u_proj * u_view * pos;
-    gl_PointSize = 8.;
-}`;
-const fPanle = `
-precision mediump float; 
-void main() {
-    gl_FragColor = vec4(.2,.2,.2,1);
-}
-`;
-const vCube = `
-attribute vec4 a_pos;
-varying vec4 v_pos;
-void main() {
-  v_pos = a_pos;
-  gl_Position = a_pos;
-  gl_Position.z = 1.0;
-}
-`;
-
-const fCube = `
-precision mediump float;
-
-uniform samplerCube u_skybox;
-uniform mat4 u_viewDirectionProjectionInverse;
-
-varying vec4 v_pos;
-void main() {
-  vec4 t = u_viewDirectionProjectionInverse * v_pos;
-  gl_FragColor = textureCube(u_skybox, normalize(t.xyz / t.w));
-}
-`;
-
-function setGeometryT() {
-    return (
-        [
-            -1, -1,
-            1, -1,
-            -1, 1,
-            -1, 1,
-            1, -1,
-            1, 1,
-        ]);
-}
 
