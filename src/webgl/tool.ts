@@ -385,7 +385,7 @@ export class Model {
 			Model.memoPosfNormal.set(this.data, { d: this.position, n: this.normal });
 		}
 	}
-	public type ='Model';
+	public type = 'Model';
 	public readonly data: PosDataType;
 	public readonly position: Array<number>;
 	public readonly normal: Array<number>;
@@ -1028,9 +1028,14 @@ const createPre = (gl: WebGLRenderingContext) => createProgramInfo({
 });
 
 export class SkyBox implements IRenderAble {
-	public constructor(gl: WebGLRenderingContext,texAll: { posX: string; posY: string; posZ: string; negX: string; negY: string; negZ: string; }) {
+	public constructor(gl: WebGLRenderingContext,
+		texAll: { posX: string; posY: string; posZ: string; negX: string; negY: string; negZ: string; },
+		onLoad?: () => void) {
 		this.gl = gl;
 		this.info = createPre(gl);
+		if (onLoad) {
+			this.onLoad = onLoad;
+		}
 		this.loadTex(texAll);
 	}
 
@@ -1061,23 +1066,30 @@ export class SkyBox implements IRenderAble {
 		// Draw the geometry.
 		gl.drawArrays(gl.TRIANGLES, 0, 1 * 6);
 	}
-	loadTex(texAll: { posX: string; posY: string; posZ: string; negX: string; negY: string; negZ: string; }) {
+	private onLoad() { }
+	private loadTex(texAll: { posX: string; posY: string; posZ: string; negX: string; negY: string; negZ: string; }) {
 		const { gl } = this;
-		var texture = gl.createTexture();
+		const texture = gl.createTexture();
 		gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture);
-		Object.entries(texAll)
+		const allPromise = Object.entries(texAll)
 			.map(([k, v]) => ({ url: v, target: (Texture as any)[k] as Texture }))
-			.forEach((faceInfo) => {
+			.map((faceInfo) => {
 				const { target, url } = faceInfo;
 				TexData.write(gl, 512, 512, target, null, texture);
 				const image = new Image();
 				image.src = url;
-				image.addEventListener('load', () => TexData.writeImage(gl, image, target, texture));
+				return new Promise(x => {
+					image.addEventListener('load', () => {
+						x();
+					});
+				}).then(() => {
+					TexData.writeImage(gl, image, target, texture);
+				});
 			});
 		gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
 		gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+		Promise.all(allPromise).then(this.onLoad.bind(this));
 	}
-
 
 }
 
@@ -1158,3 +1170,16 @@ export class MeshLine implements IRenderAble {
 		gl.drawArrays(gl.LINES, 0, this.position.length / this.size);
 	}
 }
+
+export const trimNumber = (d: any, fract = 2) => {
+	const next = { ...d };
+	Object.keys(next).forEach(x => {
+		const n = next[x];
+		if (typeof n === 'number') {
+			next[x] = Number((n as number).toFixed(fract));
+		} else if (typeof n === 'object') {
+			next[x] = trimNumber(n);
+		}
+	});
+	return next;
+};
