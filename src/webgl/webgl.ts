@@ -1,4 +1,4 @@
-import { mat2, mat3, mat4, vec3, vec4, vec2 } from 'gl-matrix';
+import { mat2, mat3, mat4, vec3, vec4 } from 'gl-matrix';
 import negX from './sky/skybox_nx.jpg';
 import negY from './sky/skybox_ny.jpg';
 import negZ from './sky/skybox_nz.jpg';
@@ -6,12 +6,26 @@ import posX from './sky/skybox_px.jpg';
 import posY from './sky/skybox_py.jpg';
 import posZ from './sky/skybox_pz.jpg';
 // tslint:disable-next-line: max-line-length
-import { array2Vec3, Box, createKeyListenerTask, createProgramInfo, degToRad, getClassName, GL, MeshLine, Model, modifyWindow, printMat, Scene, setCSS, Sphere, SkyBox, trimNumber } from './tool';
+import { Box, createKeyListenerTask, createProgramInfo, degToRad, getClassName, GL, MeshLine, Model, modifyWindow, printMat, Scene, setCSS, SkyBox, Sphere, trimNumber } from './tool';
 import { ui } from './ui';
 
 modifyWindow({ mat3, printMat, vec3, vec4, mat2, mat4, d2r: degToRad });
 export const webgl = (gl: WebGLRenderingContext) => {
     setTimeout(() => {
+        if (0) {
+            const v3 = vec3.fromValues(150, 250, 300);
+            const ori = vec3.fromValues(400, 400, 400);
+            const d1 = vec3.dist(v3, ori);
+            console.info('d1 ' + d1);
+            const mat = mat4.create();
+            mat4.translate(mat, mat, ori);
+            mat4.rotateX(mat, mat, degToRad(45));
+            const nv = vec3.create();
+            vec3.transformMat4(nv, vec3.fromValues(1, 1, 1), mat);
+            const d2 = vec3.dist(nv, ori);
+            console.info('d2 ' + d2);
+            return;
+        }
         const app = new App(gl);
         app.loop.run();
         document.querySelector('#hint')?.remove();
@@ -114,7 +128,7 @@ export class App extends GL<infoT, typeof initState> {
         this.createUi();
         const meshLine = new MeshLine({ range: 16000, num: 100, gl });
         const skyBox = new SkyBox(gl, { posX, posY, posZ, negX, negY, negZ });
-        this.renderQuene.push(this.model.scene, skyBox);
+        this.renderQuene.push(this.model.scene, skyBox, meshLine);
     }
     public model = createModel(this.gl, this.info);
     public clicked = false;
@@ -125,14 +139,12 @@ export class App extends GL<infoT, typeof initState> {
         if (s.lookAt) {
             const tPos = mat4.getTranslation(vec3.create(), s.lookAt.finalModelmat);
             if (s.keepDistMat && s.keepDist !== Infinity) { // 保持与目标的距离
-                const direction = vec3.normalize(vec3.create(), tPos);
-                const distVec = vec3.scale(vec3.create(), direction, s.keepDist);
-                const viewPos = vec3.sub(vec3.create(), tPos, distVec);
-                //vec3.sub(viewPos, tPos, viewPos);
-                //const mat = mat4.create();
-                //mat4.translate(mat, s.keepDistMat, Array.from(tPos).map(x=>-x));
-                //vec3.transformMat4(viewPos, viewPos, mat);
-                this.camerePos = viewPos;
+                const distVec = vec3.scale(vec3.create(), vec3.fromValues(1, 0, 0), s.keepDist); // 目标指向
+                const mat = mat4.create();
+                mat4.translate(mat, mat, tPos); // chrome在低的保持距离下会发生振动，不知道原因
+                mat4.mul(mat, mat, s.keepDistMat);
+                vec3.transformMat4(distVec, distVec, mat);
+                this.camerePos = distVec;
             }
             this.setState({ view2targetDist: vec3.dist(tPos, this.camerePos) });
         }
@@ -146,8 +158,7 @@ export class App extends GL<infoT, typeof initState> {
         ele.u_lightDirectional = res;
         this.setState({ light: Array.from(res) });
         ele.u_shininess = s.shininess;
-        const viewPos = [s.x, s.y, s.z];
-        ele.u_viewWorldPos = array2Vec3(viewPos);
+        ele.u_viewWorldPos = this.camerePos;
         box0.pushMat(x => {
             box0.popMat();
             mat4.translate(x, x, [50, 50, 50]);
@@ -195,9 +206,13 @@ export class App extends GL<infoT, typeof initState> {
             if (s.lookAt) {
                 const center = vec3.create();
                 mat4.getTranslation(center, s.lookAt.finalModelmat);
-                mat4.lookAt(x, viewPos, center, [0, 1, 0]);
+                const e = vec3.fromValues(0, 1, 0);
+                if (s.keepDistMat) {
+                    //vec3.transformMat4(e,e,s.keepDistMat);
+                }
+                mat4.lookAt(x, this.camerePos, center, e);
             } else {
-                mat4.translate(x, x, viewPos.map(_ => -_));
+                mat4.translate(x, x, vec3.scale(vec3.create(), this.camerePos, -1));
                 mat4.rotateX(x, x, degToRad(s.rotateCameraX));
                 mat4.rotateY(x, x, degToRad(s.rotateCameraY));
                 mat4.scale(x, x, [s.scale, s.scale, s.scale]);
@@ -269,7 +284,7 @@ export class App extends GL<infoT, typeof initState> {
                 this.setState({ keepDist: Infinity, keepDistMat: null });
             }
         });
-        const unSelect = createLi('不选择注视目标', null, () => {
+        const unSelect = createLi('重置', null, () => {
             this.camerePos = vec3.fromValues(initState.x, initState.y, initState.z);
             keepDist.click();
         });

@@ -1170,13 +1170,13 @@ export class MeshLine implements IRenderAble {
 		gl.drawArrays(gl.LINES, 0, this.position.length / this.size);
 	}
 }
-
+export const tNumber = (n:number,fract=2) =>Number((n as number).toFixed(fract));
 export const trimNumber = (d: any, fract = 2) => {
 	const next = { ...d };
 	Object.keys(next).forEach(x => {
 		const n = next[x];
 		if (typeof n === 'number') {
-			next[x] = Number((n as number).toFixed(fract));
+			next[x] = tNumber(n,fract);
 		} else if (typeof n === 'object') {
 			next[x] = trimNumber(n);
 		}
