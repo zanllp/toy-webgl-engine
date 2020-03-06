@@ -11,7 +11,6 @@ export class App extends React.Component {
 			return;
 		}
 		webgl(gl);
-		//alert('This is a normal message');
 	}
 
 	render() {

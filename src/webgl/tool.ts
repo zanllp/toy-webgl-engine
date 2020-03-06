@@ -371,10 +371,14 @@ export class Model {
 	constructor(data: PosDataType, normal?: number[]) {
 		this.data = data;
 		this.setModelMat = createSetMatFn<Model>('modelMat');
-		if (Model.memoPosfNormal.has(this.data)) {
-			const d = Model.memoPosfNormal.get(this.data);
-			this.position = d!.d;
-			this.normal = d!.n;
+		const vertex = Model.memoPosfNormal.get(this.data);
+		if (vertex) {
+			this.position = vertex.position;
+			if (normal) {
+				this.normal = normal;
+			} else {
+				this.normal = vertex.normal;
+			}
 		} else {
 			this.position = data.flat();
 			if (normal) {
@@ -382,7 +386,7 @@ export class Model {
 			} else {
 				this.normal = calcNormal(this.data);
 			}
-			Model.memoPosfNormal.set(this.data, { d: this.position, n: this.normal });
+			Model.memoPosfNormal.set(this.data, { position: this.position, normal: this.normal });
 		}
 	}
 	public type = 'Model';
@@ -394,7 +398,7 @@ export class Model {
 	public parent?: Model;
 	public modelMat = mat4.create();
 	public color = new Array<number>();
-	static memoPosfNormal = new Map<PosDataType, { d: Array<number>, n: Array<number> }>();
+	static memoPosfNormal = new Map<PosDataType, { position: Array<number>, normal: Array<number> }>();
 	get childArray() {
 		return Array.from(this.children);
 	}
@@ -454,65 +458,77 @@ export class Model {
 		}
 	}
 }
+export const arraySwap = <T>(array: T[], l: number, r: number) => {
+	const temp = array[r];
+	array[r] = array[l];
+	array[l] = temp;
+	return array;
+};
 /**
  * rect2triangle,将一个矩形展开成2个三角形
  * @param rect 逆时针顺序的矩形
+ * @param reverse 将三角形反向
  */
-const r2t = (rect: Array<number>) => {
+const r2t = (rect: Array<number>, reverse = false) => {
 	for (let i = 0; i < 3; i++) {
 		rect[5 * 3 + i] = rect[3 * 3 + i];
-	}
-	for (let i = 0; i < 3; i++) {
 		rect[4 * 3 + i] = rect[2 * 3 + i];
-	}
-	for (let i = 0; i < 3; i++) {
 		rect[3 * 3 + i] = rect[i];
+	}
+	if (reverse) {
+		for (let i = 0; i < 3; i++) {
+			arraySwap(rect, 0 * 3 + i, 2 * 3 + i);
+			arraySwap(rect, 3 * 3 + i, 5 * 3 + i);
+		}
 	}
 	return rect;
 };
 export type colorType = number[] | number;
 export type cubeColorType = { front: colorType; back: colorType; right: colorType; left: colorType; top: colorType; bottom: colorType; } | number;
 export class Box extends Model {
-	public constructor({ x = 100, y = 100, z = 100, color = 'none' }: {
-		x?: number; y?: number; z?: number; color?: 'none' | 'rand' | cubeColorType
+	public constructor({ x = 100, y = 100, z = 100, color = 'none', reverse = false }: {
+		x?: number; y?: number; z?: number; color?: 'none' | 'rand' | cubeColorType; reverse?: boolean
 	} = {}) {
-		const str = JSON.stringify({ x, y, z });
-		if (Box.memoPos.has(str)) {
-			super(Box.memoPos.get(str)!);
+		const str = JSON.stringify({ x, y, z, reverse });
+		const memo = Box.memoPos.get(str);
+		if (memo) {
+			super(memo.pos, memo.normal);
 		} else {
-			const data = [
+			const e = (x: Array<number>) => r2t(x, reverse);
+			const pos = [
 				// front
-				r2t([x, y, z,
+				e([x, y, z,
 					0, y, z,
 					0, 0, z,
 					x, 0, z,]),
-				r2t([x, y, 0,
+				e([x, y, 0,
 					x, 0, 0,
 					0, 0, 0,
 					0, y, 0,]),
 				// right
-				r2t([x, y, z,
+				e([x, y, z,
 					x, 0, z,
 					x, 0, 0,
 					x, y, 0]),
 				//left
-				r2t([0, y, z,
+				e([0, y, z,
 					0, y, 0,
 					0, 0, 0,
 					0, 0, z,]),
 				//top
-				r2t([x, y, 0,
+				e([x, y, 0,
 					0, y, 0,
 					0, y, z,
 					x, y, z,]),
 				//bottom
-				r2t([0, 0, 0,
+				e([0, 0, 0,
 					x, 0, 0,
 					x, 0, z,
 					0, 0, z,]),
 			];
-			super(data);
-			Box.memoPos.set(str, data);
+			const normal = calcNormal(pos);
+			super(pos, normal);
+			Box.memoPos.set(str, { pos, normal });
 		}
 
 		if (color === 'rand') {
@@ -523,7 +539,7 @@ export class Box extends Model {
 		}
 		this.type = 'Box';
 	}
-	static memoPos = new Map<string, PosDataType>();
+	static memoPos = new Map<string, { pos: PosDataType, normal: Array<number> }>();
 	public fillColor(color: cubeColorType | number) {
 		if (typeof color === 'object') {
 			const { front, back, right, left, top, bottom } = color;
@@ -564,15 +580,19 @@ export class Sphere extends Model {
 	 * @param latitude 维度相关
 	 * @param longitude 经度相关
 	 */
-	public constructor({ radius = 100, latitude, longitude, color = 'none' }:
-		{ radius?: number; latitude?: Partial<latLong>; longitude?: Partial<latLong>; color?: 'none' | 'rand' | colorType } = {}) {
-		const str = JSON.stringify({ radius, latitude, longitude });
-		if (Sphere.memoPos.has(str)) {
-			super(Sphere.memoPos.get(str)!.data);
+	public constructor({ radius = 100, latitude, longitude, color = 'none', reverse = false }: {
+		radius?: number; latitude?: Partial<latLong>;
+		longitude?: Partial<latLong>; color?: 'none' | 'rand' | colorType,
+		reverse?: boolean
+	} = {}) {
+		const str = JSON.stringify({ radius, latitude, longitude, reverse });
+		const vertex = Sphere.memoPos.get(str);
+		if (vertex) {
+			super(vertex.pos, vertex.normal);
 		} else {
 			const lat = { start: degToRad(90), end: degToRad(-90), sub: 30, ...latitude };
 			const long = { start: 0, end: degToRad(360), sub: 30, ...longitude };
-			const pos = new Array<Array<Array<number>>>();
+			const posSrc = new Array<Array<Array<number>>>();
 			const latStep = (lat.end - lat.start) / lat.sub;
 			const longStep = (long.end - long.start) / long.sub;
 			for (let i = 0; i < lat.sub + 1; i++) {
@@ -585,70 +605,93 @@ export class Sphere extends Model {
 					const y = radius * Math.sin(latRad);
 					posFloor.push([x, y, z]);
 				}
-				pos.push(posFloor);
+				posSrc.push(posFloor);
 			}
-			const data = new Array<Array<number>>();
-			const p = pos;
+			const pos = new Array<Array<number>>();
+			const p = posSrc;
 			for (let i = 0; i < p.length - 1; i++) { // 层
 				for (let ii = 0; ii < p[i].length - 1; ii++) { // 列
-					data.push(r2t([
+					pos.push(r2t([
 						...p[i][ii + 1],
 						...p[i][ii],
 						...p[i + 1][ii],
 						...p[i + 1][ii + 1],
-					]));
+					], reverse));
 				}
 			}
 			// 下面操作是平滑面法线
-			const n = calcNormalN(data);
+			let topNormal = [0, 1, 0]; // 北极点法线
+			let bottomNormal = [0, -1, 0]; // 南极点法线
+			let indexVertexInPosArray = {
+				lt: 5,
+				rt: 4,
+				lb: 0,
+				rb: 1,
+				rt1: 2,
+				lb1: 3
+			};
+			if (reverse) {
+				topNormal = [0, -1, 0]; // 北极点法线
+				bottomNormal = [0, 1, 0]; // 南极点法线
+				// 正向和方向的顶点位置排布不一样，具体参考法线计算
+				indexVertexInPosArray = {
+					lt: 3, // 左上角方块的右下角
+					rt: 0,
+					lb: 2,
+					rb: 1,
+					rt1: 4, // 左上角有两个点
+					lb1: 5
+				};
+			}
+			const n = calcNormalN(pos);
 			const vec3Avg = (p: Array<number>, c: Array<number>) => {
 				p[0] += c[0] / 4;
 				p[1] += c[1] / 4;
 				p[2] += c[2] / 4;
 				return p;
 			};
+			const ip = indexVertexInPosArray;
+			// 取4个矩形对中间的6个顶点进行均值
 			for (let i = 0; i < lat.sub - 1; i += 1) {
 				for (let ii = 0; ii < long.sub; ii += 1) {
 					if (ii === long.sub - 1) { // 经度越界的地方变成0
-						const lt6 = n[lat.sub * i + ii][5]; // 左上角方块的第六个位置
-						const rt5 = n[lat.sub * i][4];
-						const lb1 = n[lat.sub * (i + 1) + ii][0];
-						const rb2 = n[lat.sub * (i + 1)][1];
-						const avg = [lt6, rt5, lb1, rb2].reduce(vec3Avg, [0, 0, 0]);
-						n[lat.sub * i + ii][5] = avg;
-						n[lat.sub * i][2] = avg;
-						n[lat.sub * i][4] = avg;
-						n[lat.sub * (i + 1) + ii][0] = avg;
-						n[lat.sub * (i + 1) + ii][3] = avg;
-						n[lat.sub * (i + 1)][1] = avg;
+						const lt = n[lat.sub * i + ii][ip.lt];
+						const rt = n[lat.sub * i][ip.rt];
+						const lb = n[lat.sub * (i + 1) + ii][ip.lb];
+						const rb = n[lat.sub * (i + 1)][ip.rb];
+						const avg = [lt, rt, lb, rb].reduce(vec3Avg, [0, 0, 0]);
+						n[lat.sub * i + ii][ip.lt] = avg;
+						n[lat.sub * i][ip.rt] = avg;
+						n[lat.sub * i][ip.rt1] = avg;
+						n[lat.sub * (i + 1) + ii][ip.lb] = avg;
+						n[lat.sub * (i + 1) + ii][ip.lb1] = avg;
+						n[lat.sub * (i + 1)][ip.rb] = avg;
 					} else {
-						const lt6 = n[lat.sub * i + ii][5]; // 左上角方块的第六个位置
-						const rt5 = n[lat.sub * i + ii + 1][4];
-						const lb1 = n[lat.sub * (i + 1) + ii][0];
-						const rb2 = n[lat.sub * (i + 1) + ii + 1][1];
-						const avg = [lt6, rt5, lb1, rb2].reduce(vec3Avg, [0, 0, 0]);
-						n[lat.sub * i + ii][5] = avg;
-						n[lat.sub * i + ii + 1][2] = avg;
-						n[lat.sub * i + ii + 1][4] = avg;
-						n[lat.sub * (i + 1) + ii][0] = avg;
-						n[lat.sub * (i + 1) + ii][3] = avg;
-						n[lat.sub * (i + 1) + ii + 1][1] = avg;
+						const lt = n[lat.sub * i + ii][ip.lt];
+						const rt = n[lat.sub * i + ii + 1][ip.rt];
+						const lb = n[lat.sub * (i + 1) + ii][ip.lb];
+						const rb = n[lat.sub * (i + 1) + ii + 1][ip.rb];
+						const avg = [lt, rt, lb, rb].reduce(vec3Avg, [0, 0, 0]);
+						n[lat.sub * i + ii][ip.lt] = avg;
+						n[lat.sub * i + ii + 1][ip.rt] = avg;
+						n[lat.sub * i + ii + 1][ip.rt1] = avg;
+						n[lat.sub * (i + 1) + ii][ip.lb] = avg;
+						n[lat.sub * (i + 1) + ii][ip.lb1] = avg;
+						n[lat.sub * (i + 1) + ii + 1][ip.rb] = avg;
 					}
 				}
 			}
-			const tAvg = [0, 1, 0]; // 北极点法线
-			const bAvg = [0, -1, 0]; // 南极点法线
 			for (let i = 0; i < long.sub; i++) {
-				n[i][0] = tAvg;
-				n[i][1] = tAvg;
-				n[i][3] = tAvg;
-				n[(lat.sub - 1) * long.sub + i][2] = bAvg;
-				n[(lat.sub - 1) * long.sub + i][4] = bAvg;
-				n[(lat.sub - 1) * long.sub + i][5] = bAvg;
+				n[i][0] = topNormal;
+				n[i][1] = topNormal;
+				n[i][3] = topNormal;
+				n[(lat.sub - 1) * long.sub + i][2] = bottomNormal;
+				n[(lat.sub - 1) * long.sub + i][4] = bottomNormal;
+				n[(lat.sub - 1) * long.sub + i][5] = bottomNormal;
 			}
 			const normal = n.flat(2);
-			super(data, normal);
-			Sphere.memoPos.set(str, { data, normal });
+			super(pos, normal);
+			Sphere.memoPos.set(str, { pos, normal });
 		}
 		if (color === 'rand') {
 			this.fillRandColor();
@@ -657,7 +700,7 @@ export class Sphere extends Model {
 		}
 		this.type = 'Sphere';
 	}
-	static memoPos = new Map<string, { data: PosDataType, normal: Array<number> }>();
+	static memoPos = new Map<string, { pos: PosDataType, normal: Array<number> }>();
 	/**
 	 * 填充颜色
 	 * @param color vec4或者vec3 (0 -> 255),0x1890ff
@@ -679,21 +722,13 @@ export class Sphere extends Model {
 
 
 
-export class Point extends Model {
-	public constructor(vec3: Array<number>) {
-		super([vec3]);
-	}
-	public render(gl: WebGLRenderingContext) {
-		gl.drawArrays(gl.POINTS, 0, 1);
-	}
-}
 
 /**
  * 组合体
  */
 export class Assembly extends Model {
 	public constructor(...models: Array<Model>) {
-		super([]);
+		super([], []);
 		for (const i of models) {
 			this.color = [...this.color, ...i.color];
 			if (!mat4.equals(i.modelMat, mat4.create())) {
@@ -710,6 +745,7 @@ export class Assembly extends Model {
 				this.normal.push(...i.normal);
 			}
 		}
+		this.type = 'Assembly';
 	}
 	public readonly position = new Array<number>();
 	public readonly normal = new Array<number>();
@@ -1170,13 +1206,15 @@ export class MeshLine implements IRenderAble {
 		gl.drawArrays(gl.LINES, 0, this.position.length / this.size);
 	}
 }
-export const tNumber = (n:number,fract=2) =>Number((n as number).toFixed(fract));
+
+
+export const tNumber = (n: number, fract = 2) => Number((n as number).toFixed(fract));
 export const trimNumber = (d: any, fract = 2) => {
 	const next = { ...d };
 	Object.keys(next).forEach(x => {
 		const n = next[x];
 		if (typeof n === 'number') {
-			next[x] = tNumber(n,fract);
+			next[x] = tNumber(n, fract);
 		} else if (typeof n === 'object') {
 			next[x] = trimNumber(n);
 		}

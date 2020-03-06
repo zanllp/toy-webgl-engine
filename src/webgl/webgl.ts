@@ -6,7 +6,7 @@ import posX from './sky/skybox_px.jpg';
 import posY from './sky/skybox_py.jpg';
 import posZ from './sky/skybox_pz.jpg';
 // tslint:disable-next-line: max-line-length
-import { Box, createKeyListenerTask, createProgramInfo, degToRad, getClassName, GL, MeshLine, Model, modifyWindow, printMat, Scene, setCSS, SkyBox, Sphere, trimNumber } from './tool';
+import { Assembly, Box, createKeyListenerTask, createProgramInfo, degToRad, getClassName, GL, MeshLine, Model, modifyWindow, printMat, Scene, setCSS, SkyBox, Sphere, trimNumber } from './tool';
 import { ui } from './ui';
 
 modifyWindow({ mat3, printMat, vec3, vec4, mat2, mat4, d2r: degToRad });
@@ -139,7 +139,7 @@ export class App extends GL<infoT, typeof initState> {
         if (s.lookAt) {
             const tPos = mat4.getTranslation(vec3.create(), s.lookAt.finalModelmat);
             if (s.keepDistMat && s.keepDist !== Infinity) { // 保持与目标的距离
-                const distVec = vec3.scale(vec3.create(), vec3.fromValues(1, 0, 0), s.keepDist); // 目标指向
+                const distVec = vec3.scale(vec3.create(), [1, 0, 0], s.keepDist); // 目标指向
                 const mat = mat4.create();
                 mat4.translate(mat, mat, tPos); // chrome在低的保持距离下会发生振动，不知道原因
                 mat4.mul(mat, mat, s.keepDistMat);
@@ -206,13 +206,9 @@ export class App extends GL<infoT, typeof initState> {
             if (s.lookAt) {
                 const center = vec3.create();
                 mat4.getTranslation(center, s.lookAt.finalModelmat);
-                const e = vec3.fromValues(0, 1, 0);
-                if (s.keepDistMat) {
-                    //vec3.transformMat4(e,e,s.keepDistMat);
-                }
-                mat4.lookAt(x, this.camerePos, center, e);
+                mat4.lookAt(x, this.camerePos, center, [0, 1, 0]);
             } else {
-                mat4.translate(x, x, vec3.scale(vec3.create(), this.camerePos, -1));
+                mat4.translate(x, x, this.camerePos.map(_ => -_) as vec3);
                 mat4.rotateX(x, x, degToRad(s.rotateCameraX));
                 mat4.rotateY(x, x, degToRad(s.rotateCameraY));
                 mat4.scale(x, x, [s.scale, s.scale, s.scale]);
@@ -246,9 +242,14 @@ export class App extends GL<infoT, typeof initState> {
             margin: '8px'
         }, state);
         uic.appendChild(fps);
-        const createLi = (s: string, target: any = undefined, onclick?: (li: HTMLLIElement) => any) => {
-            const m = document.createElement('li');
-            m.innerText = s;
+        const createLi = (s: string | HTMLLIElement, target: any = undefined, onclick?: (li: HTMLLIElement) => any) => {
+            let m: HTMLLIElement;
+            if (typeof s === 'string') {
+                m = document.createElement('li');
+                m.innerText = s;
+            } else {
+                m = s;
+            }
             m.className = 'model-select';
             m.addEventListener('click', e => {
                 if (target !== undefined) {
@@ -328,8 +329,12 @@ const createModel = (gl: WebGLRenderingContext, info: infoT) => {
     const nsp = new Sphere({ radius: 50, color: 'rand' });
     nsp.pushMat(x => mat4.translate(x, x, [300, 0, 0]));
     sphere.childArray[3].addChild(nsp);
-    const scene = new Scene(gl, info.ele, box0, sphere);
-    return { scene, box0, sphere, };
+    const box2 = new Box({ x: 1000, y: 1000, z: 1000, color: 'rand', });
+    const box = new Box({ x: 999, y: 999, z: 999, color: 'rand', reverse: true });
+    const asm = new Assembly(box, box2);
+    asm.setModelMat(x => mat4.translate(x, x, [1500, 0, 500]));
+    const scene = new Scene(gl, info.ele, box0, sphere, asm);
+    return { scene, box0, sphere, asm };
 };
 
 
