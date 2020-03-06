@@ -6,8 +6,19 @@ import posX from './sky/skybox_px.jpg';
 import posY from './sky/skybox_py.jpg';
 import posZ from './sky/skybox_pz.jpg';
 // tslint:disable-next-line: max-line-length
-import { Assembly, Box, createKeyListenerTask, createProgramInfo, degToRad, getClassName, GL, MeshLine, Model, modifyWindow, printMat, Scene, setCSS, SkyBox, Sphere, trimNumber } from './tool';
+import { GL } from './gl';
 import { ui } from './ui';
+import { degToRad } from './mesh/util';
+import { Model } from './mesh/model';
+import { MeshLine } from './component/meshline';
+import { SkyBox } from './component/skybox';
+import { createKeyListenerTask } from './renderloop';
+import { setCSS, trimNumber, modifyWindow, printMat } from './tool';
+import { Box } from './mesh/box';
+import { Sphere } from './mesh/sphere';
+import { Assembly } from './mesh/assembly';
+import { createProgramInfo } from './glBase';
+import { Scene } from './mesh/scene';
 
 modifyWindow({ mat3, printMat, vec3, vec4, mat2, mat4, d2r: degToRad });
 export const webgl = (gl: WebGLRenderingContext) => {
@@ -307,7 +318,7 @@ export class App extends GL<infoT, typeof initState> {
                 `fps:${loop.fps.toFixed(2)}
 平均fps:${loop.averageFps.toFixed(2)}`;
             const { x, y, z, view2targetDist, scale, keepDist } = this.state;
-            const lookAt = this.state.lookAt !== null ? getClassName(this.state.lookAt) : null;
+            const lookAt = this.state.lookAt !== null ? this.state.lookAt.type : null;
             state.innerText = `部分状态 : ${JSON.stringify(trimNumber({ view: { x, y, z }, scale, lookAt, keepDist, view2targetDist }), null, 8)}`;
         }, 300);
     }
