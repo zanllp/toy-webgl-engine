@@ -22,7 +22,6 @@ const createMeshLineInfo = (gl: WebGLRenderingContext) => createProgramInfo({
 		void main() {
 			vec4 pos = vec4(a_pos,1);
 			gl_Position =  u_proj * u_view * pos;
-			gl_PointSize = 8.;
 		}`,
 		fragment: `
 		precision mediump float; 

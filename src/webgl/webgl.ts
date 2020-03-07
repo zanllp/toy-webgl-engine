@@ -18,7 +18,7 @@ import { Box } from './mesh/box';
 import { Sphere } from './mesh/sphere';
 import { Assembly } from './mesh/assembly';
 import { createProgramInfo } from './glBase';
-import { Scene } from './mesh/scene';
+import { Scene } from './component/scene';
 
 modifyWindow({ mat3, printMat, vec3, vec4, mat2, mat4, d2r: degToRad });
 export const webgl = (gl: WebGLRenderingContext) => {

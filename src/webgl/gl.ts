@@ -7,7 +7,7 @@ export type Info = {
 	a_pos: attrResType;
 	a_normal?: attrResType;
 	a_color?: attrResType;
-	u_model?: mat4;
+	u_model: mat4;
 	u_world?: mat4;
 	u_proj: mat4;
 	u_view: mat4;
