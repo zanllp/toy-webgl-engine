@@ -1,7 +1,7 @@
 import { createProgramInfo, TexData, Texture } from '../glBase';
 import { IRenderAble } from '../toyEngine';
 import { mat4 } from 'gl-matrix';
-import { modelMat2WorldMat } from '../Mesh/util';
+import { modelMat2WorldMat } from '../mesh/util';
 
 const createPre = (gl: WebGLRenderingContext) => createProgramInfo({
 	gl,

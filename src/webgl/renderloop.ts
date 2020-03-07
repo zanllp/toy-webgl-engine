@@ -1,4 +1,4 @@
-import { setStateType } from './Mesh/util';
+import { setStateType } from './mesh/util';
 
 /**
  * 渲染循环，rqa实现
