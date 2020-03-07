@@ -1,7 +1,6 @@
 import { Model } from './model';
 import { colorType } from './type';
-import { r2t, calcNormal, PosDataType, num2color } from './util';
-import { vec3 } from 'gl-matrix';
+import { calcNormal, num2color, PosDataType, r2t } from './util';
 
 export type cubeColorType = {
     front: colorType;

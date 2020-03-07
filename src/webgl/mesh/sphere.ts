@@ -1,7 +1,6 @@
 import { Model } from './model';
-import { degToRad, r2t, calcNormalN, num2color, PosDataType } from './util';
 import { colorType } from './type';
-import { vec3 } from 'gl-matrix';
+import { calcNormalN, degToRad, num2color, PosDataType, r2t } from './util';
 
 type latLong = {
 	/**

@@ -1,42 +1,28 @@
 import { mat2, mat3, mat4, vec3, vec4 } from 'gl-matrix';
-import negX from './sky/skybox_nx.jpg';
-import negY from './sky/skybox_ny.jpg';
-import negZ from './sky/skybox_nz.jpg';
-import posX from './sky/skybox_px.jpg';
-import posY from './sky/skybox_py.jpg';
-import posZ from './sky/skybox_pz.jpg';
+import negX from './Sky/skybox_nx.jpg';
+import negY from './Sky/skybox_ny.jpg';
+import negZ from './Sky/skybox_nz.jpg';
+import posX from './Sky/skybox_px.jpg';
+import posY from './Sky/skybox_py.jpg';
+import posZ from './Sky/skybox_pz.jpg';
 // tslint:disable-next-line: max-line-length
-import { GL } from './gl';
+import { ToyEngine } from './toyEngine';
 import { ui } from './ui';
-import { degToRad } from './mesh/util';
-import { Model } from './mesh/model';
-import { MeshLine } from './component/meshline';
-import { SkyBox } from './component/skybox';
+import { degToRad } from './Mesh/util';
+import { Model } from './Mesh/model';
+import { MeshLine } from './Component/meshline';
+import { SkyBox } from './Component/skybox';
 import { createKeyListenerTask } from './renderloop';
 import { setCSS, trimNumber, modifyWindow, printMat } from './tool';
-import { Box } from './mesh/box';
-import { Sphere } from './mesh/sphere';
-import { Assembly } from './mesh/assembly';
+import { Box } from './Mesh/box';
+import { Sphere } from './Mesh/sphere';
+import { Assembly } from './Mesh/assembly';
 import { createProgramInfo } from './glBase';
-import { Scene } from './component/scene';
+import { Scene } from './Component/scene';
 
 modifyWindow({ mat3, printMat, vec3, vec4, mat2, mat4, d2r: degToRad });
 export const webgl = (gl: WebGLRenderingContext) => {
     setTimeout(() => {
-        if (0) {
-            const v3 = vec3.fromValues(150, 250, 300);
-            const ori = vec3.fromValues(400, 400, 400);
-            const d1 = vec3.dist(v3, ori);
-            console.info('d1 ' + d1);
-            const mat = mat4.create();
-            mat4.translate(mat, mat, ori);
-            mat4.rotateX(mat, mat, degToRad(45));
-            const nv = vec3.create();
-            vec3.transformMat4(nv, vec3.fromValues(1, 1, 1), mat);
-            const d2 = vec3.dist(nv, ori);
-            console.info('d2 ' + d2);
-            return;
-        }
         const app = new App(gl);
         app.loop.run();
         document.querySelector('#hint')?.remove();
@@ -57,11 +43,10 @@ const initState = {
     view2targetDist: 0
 };
 
-export class App extends GL<infoT, typeof initState> {
+export class App extends ToyEngine<infoT, typeof initState> {
     constructor(gl: WebGLRenderingContext) {
         super(gl, createInfo(gl), initState);
         const setS = this.setState;
-        this.setProjection(gl => ({ fovy: degToRad(45), aspect: gl.canvas.width / gl.canvas.height, near: 1, far: 8000 }));
         window.addEventListener('resize', this.resize.bind(this));
         document.addEventListener('wheel', x => {
             const { state } = this;
@@ -74,7 +59,7 @@ export class App extends GL<infoT, typeof initState> {
                 if (state.keepDist !== Infinity) {
                     this.setState({ keepDist: state.keepDist * scaleFactor });
                 } else {
-                    const tPos = mat4.getTranslation(vec3.create(), lookAt.finalModelmat);
+                    const tPos = lookAt.modelPos;
                     const vPos = this.camerePos;
                     const dis = vec3.sub(vec3.create(), vPos, tPos);
                     this.camerePos = vec3.add(vec3.create(), tPos, vec3.scale(vec3.create(), dis, scaleFactor));
@@ -104,7 +89,7 @@ export class App extends GL<infoT, typeof initState> {
                         mat4.rotateX(mat, mat, movementY / 400);
                         this.setState({ keepDistMat: mat });
                     } else {
-                        const tPos = mat4.getTranslation(vec3.create(), lookAt.finalModelmat);
+                        const tPos = lookAt.modelPos;
                         const vPos = this.camerePos;
                         const dis = vec3.sub(vec3.create(), vPos, tPos);
                         mat = mat4.create();
@@ -148,7 +133,7 @@ export class App extends GL<infoT, typeof initState> {
         const { info } = this;
         let s = this.state;
         if (s.lookAt) {
-            const tPos = mat4.getTranslation(vec3.create(), s.lookAt.finalModelmat);
+            const tPos = s.lookAt.modelPos;
             if (s.keepDistMat && s.keepDist !== Infinity) { // 保持与目标的距离
                 const distVec = vec3.scale(vec3.create(), [1, 0, 0], s.keepDist); // 目标指向
                 const mat = mat4.create();
@@ -215,9 +200,7 @@ export class App extends GL<infoT, typeof initState> {
         });
         this.setViewMat(x => {
             if (s.lookAt) {
-                const center = vec3.create();
-                mat4.getTranslation(center, s.lookAt.finalModelmat);
-                mat4.lookAt(x, this.camerePos, center, [0, 1, 0]);
+                mat4.lookAt(x, this.camerePos, s.lookAt.modelPos, [0, 1, 0]);
             } else {
                 mat4.translate(x, x, this.camerePos.map(_ => -_) as vec3);
                 mat4.rotateX(x, x, degToRad(s.rotateCameraX));
@@ -287,7 +270,7 @@ export class App extends GL<infoT, typeof initState> {
             const s = this.state;
             if (s.keepDist === Infinity && s.lookAt) { // 必须在注视某个目标的情况下
                 const vPos = this.camerePos;
-                const tPos = mat4.getTranslation(vec3.create(), s.lookAt.finalModelmat);
+                const tPos = s.lookAt.modelPos;
                 const dist = vec3.dist(vPos, tPos);
                 li.innerText = `当前与目标保持距离:keepDist`;
                 this.setState({ keepDist: dist, keepDistMat: mat4.create() });

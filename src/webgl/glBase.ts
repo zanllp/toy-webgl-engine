@@ -1,9 +1,9 @@
 import { mat3, mat4, vec2, vec3, vec4 } from 'gl-matrix';
 
-export function resize(canvas: any) {
+export function resize(canvas: any, dpi = window.devicePixelRatio || 1) {
     // 获取浏览器中画布的显示尺寸
-    const displayWidth = canvas.clientWidth;
-    const displayHeight = canvas.clientHeight;
+    const displayWidth = canvas.clientWidth * dpi | 0;
+    const displayHeight = canvas.clientHeight * dpi | 0;
 
     // 检尺寸是否相同
     if (canvas.width !== displayWidth ||
