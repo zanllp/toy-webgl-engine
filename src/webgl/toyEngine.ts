@@ -1,6 +1,6 @@
 import { mat4 } from 'gl-matrix';
 import { attrResType, resize } from './glBase';
-import { createSetMatFn, createSetStateFn, SetMatType, setStateType } from './mesh/util';
+import { createSetMatFn, createSetStateFn, SetMatType, setStateType, degToRad } from './Mesh/util';
 import { RenderLoop } from './renderloop';
 
 export type Info = {
@@ -18,14 +18,14 @@ export type Info = {
 
 export type projParamsType = { fovy: number, aspect: number, near: number, far: number } |
 	((gl: WebGLRenderingContext) => ({ fovy: number, aspect: number, near: number, far: number }));
-export class GL<T extends { [x: string]: Info } = any, S = any> implements IRenderAble {
+export class ToyEngine<T extends { [x: string]: Info } = any, S = any>  {
 	constructor(gl: WebGLRenderingContext, info: T, state: S) {
 		this.gl = gl;
 		this.info = info;
 		this.state = state;
 		this.setState = createSetStateFn(gl, info, this.renderFrame.bind(this), this);
-		this.setProjectionMat = createSetMatFn<GL>('projectionMat');
-		this.setViewMat = createSetMatFn<GL>('viewMat');
+		this.setProjectionMat = createSetMatFn<ToyEngine>('projectionMat');
+		this.setViewMat = createSetMatFn<ToyEngine>('viewMat');
 		this.loop.renderTask = this.renderFrame.bind(this);
 		this.resize();
 	}
@@ -53,7 +53,7 @@ export class GL<T extends { [x: string]: Info } = any, S = any> implements IRend
 	/**
 	 * 投影矩阵
 	 */
-	public projectionMat = mat4.create();
+	public projectionMat?: mat4;
 
 	/**
 	 * 视图矩阵
@@ -64,11 +64,6 @@ export class GL<T extends { [x: string]: Info } = any, S = any> implements IRend
 	 * 待渲染目标的队列
 	 */
 	public renderQuene = new Array<IRenderAble>();
-
-	/**
-	 * 投影参数
-	 */
-	private projParams?: projParamsType;
 
 	/**
 	 * 渲染函数，在渲染渲染队列前调用，执行矩阵的变换
@@ -100,6 +95,9 @@ export class GL<T extends { [x: string]: Info } = any, S = any> implements IRend
 	 * 渲染一帧
 	 */
 	public renderFrame() {
+		if (this.projectionMat === undefined) {
+			this.setProjection(this.projParams);
+		}
 		this.clear();
 		this.render();
 		this.renderQuene.forEach(x => {
@@ -155,6 +153,11 @@ export class GL<T extends { [x: string]: Info } = any, S = any> implements IRend
 	public setProjectionMat(fn: SetMatType): mat4 {
 		throw new Error('Method not implemented.');
 	}
+
+	/**
+	 * 投影参数
+	 */
+	private projParams: projParamsType = gl => ({ fovy: degToRad(45), aspect: gl.canvas.width / gl.canvas.height, near: 1, far: 10000 });
 }
 
 

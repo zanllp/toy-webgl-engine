@@ -1,6 +1,6 @@
 import { createProgramInfo } from '../glBase';
 import { mat4 } from 'gl-matrix';
-import { IRenderAble } from '../gl';
+import { IRenderAble } from '../toyEngine';
 
 
 const createMeshLineInfo = (gl: WebGLRenderingContext) => createProgramInfo({
@@ -65,7 +65,7 @@ export class MeshLine implements IRenderAble {
 	public size: number;
 
 	projectionMat: mat4 = mat4.create();
-	
+
 	viewMat: mat4 = mat4.create();
 
 	gl: WebGLRenderingContext;
@@ -73,7 +73,7 @@ export class MeshLine implements IRenderAble {
 	info: ReturnType<typeof createMeshLineInfo>;
 
 	position: Array<number>;
-	
+
 	public render() {
 		const { gl, info } = this;
 		info.u_proj = this.projectionMat;
