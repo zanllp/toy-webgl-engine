@@ -1,6 +1,6 @@
 import { mat4 } from 'gl-matrix';
 import { attrResType, resize } from './glBase';
-import { createSetMatFn, createSetStateFn, SetMatType, setStateType, degToRad } from './Mesh/util';
+import { createSetMatFn, createSetStateFn, SetMatType, setStateType, degToRad } from './mesh/util';
 import { RenderLoop } from './renderloop';
 
 export type Info = {

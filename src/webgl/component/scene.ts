@@ -1,7 +1,7 @@
 import { Info, IRenderAble } from '../toyEngine';
-import { Model } from '../Mesh/model';
+import { Model } from '../mesh/model';
 import { mat4 } from 'gl-matrix';
-import { modelMat2WorldMat } from '../Mesh/util';
+import { modelMat2WorldMat } from '../mesh/util';
 
 export class Scene<T extends Info> implements IRenderAble {
     public constructor(gl: WebGLRenderingContext, info: T, ...models: Array<Model>) {

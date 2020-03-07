@@ -8,17 +8,17 @@ import posZ from './Sky/skybox_pz.jpg';
 // tslint:disable-next-line: max-line-length
 import { ToyEngine } from './toyEngine';
 import { ui } from './ui';
-import { degToRad } from './Mesh/util';
-import { Model } from './Mesh/model';
-import { MeshLine } from './Component/meshline';
-import { SkyBox } from './Component/skybox';
+import { degToRad } from './mesh/util';
+import { Model } from './mesh/model';
+import { MeshLine } from './component/meshline';
+import { SkyBox } from './component/skybox';
 import { createKeyListenerTask } from './renderloop';
 import { setCSS, trimNumber, modifyWindow, printMat } from './tool';
-import { Box } from './Mesh/box';
-import { Sphere } from './Mesh/sphere';
-import { Assembly } from './Mesh/assembly';
+import { Box } from './mesh/box';
+import { Sphere } from './mesh/sphere';
+import { Assembly } from './mesh/assembly';
 import { createProgramInfo } from './glBase';
-import { Scene } from './Component/scene';
+import { Scene } from './component/scene';
 
 modifyWindow({ mat3, printMat, vec3, vec4, mat2, mat4, d2r: degToRad });
 export const webgl = (gl: WebGLRenderingContext) => {
