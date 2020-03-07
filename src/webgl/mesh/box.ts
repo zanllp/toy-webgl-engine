@@ -1,6 +1,7 @@
 import { Model } from './model';
 import { colorType } from './type';
 import { r2t, calcNormal, PosDataType, num2color } from './util';
+import { vec3 } from 'gl-matrix';
 
 export type cubeColorType = {
     front: colorType;
@@ -18,7 +19,7 @@ export class Box extends Model {
         const str = JSON.stringify({ x, y, z, reverse });
         const memo = Box.memoPos.get(str);
         if (memo) {
-            super(memo.pos, memo.normal);
+            super(memo.pos, [x, y, z], memo.normal);
         } else {
             const e = (x: Array<number>) => r2t(x, reverse);
             const pos = [
@@ -53,7 +54,7 @@ export class Box extends Model {
                     0, 0, z,]),
             ];
             const normal = calcNormal(pos);
-            super(pos, normal);
+            super(pos, [x,y,z], normal);
             Box.memoPos.set(str, { pos, normal });
         }
 
@@ -65,7 +66,7 @@ export class Box extends Model {
         }
         this.type = 'Box';
     }
-    
+
     static memoPos = new Map<string, { pos: PosDataType, normal: Array<number> }>();
 
     public fillColor(color: cubeColorType) {

@@ -22,7 +22,6 @@ const createMeshLineInfo = (gl: WebGLRenderingContext) => createProgramInfo({
 		void main() {
 			vec4 pos = vec4(a_pos,1);
 			gl_Position =  u_proj * u_view * pos;
-			gl_PointSize = 8.;
 		}`,
 		fragment: `
 		precision mediump float; 
@@ -62,12 +61,19 @@ export class MeshLine implements IRenderAble {
 		this.info = createMeshLineInfo(gl);
 		this.position = dst.flat(1);
 	}
+
 	public size: number;
+
 	projectionMat: mat4 = mat4.create();
+	
 	viewMat: mat4 = mat4.create();
+
 	gl: WebGLRenderingContext;
+
 	info: ReturnType<typeof createMeshLineInfo>;
+
 	position: Array<number>;
+	
 	public render() {
 		const { gl, info } = this;
 		info.u_proj = this.projectionMat;

@@ -101,15 +101,14 @@ export class SkyBox implements IRenderAble {
 				image.src = url;
 				return new Promise(x => {
 					image.addEventListener('load', () => {
+						TexData.writeImage(gl, image, target, texture);
 						x();
 					});
-				}).then(() => {
-					TexData.writeImage(gl, image, target, texture);
 				});
 			});
+		Promise.all(allPromise).then(this.onLoad.bind(this));
 		gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
 		gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-		Promise.all(allPromise).then(this.onLoad.bind(this));
 	}
 
 }

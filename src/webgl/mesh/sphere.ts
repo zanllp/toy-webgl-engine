@@ -1,6 +1,7 @@
 import { Model } from './model';
 import { degToRad, r2t, calcNormalN, num2color, PosDataType } from './util';
 import { colorType } from './type';
+import { vec3 } from 'gl-matrix';
 
 type latLong = {
 	/**
@@ -33,8 +34,9 @@ export class Sphere extends Model {
 	} = {}) {
 		const str = JSON.stringify({ radius, latitude, longitude, reverse });
 		const vertex = Sphere.memoPos.get(str);
+		const d = 2 * radius;
 		if (vertex) {
-			super(vertex.pos, vertex.normal);
+			super(vertex.pos, [d, d, d], vertex.normal);
 		} else {
 			const lat = { start: degToRad(90), end: degToRad(-90), sub: 30, ...latitude };
 			const long = { start: 0, end: degToRad(360), sub: 30, ...longitude };
@@ -136,7 +138,7 @@ export class Sphere extends Model {
 				n[(lat.sub - 1) * long.sub + i][5] = bottomNormal;
 			}
 			const normal = n.flat(2);
-			super(pos, normal);
+			super(pos, [d, d, d], normal);
 			Sphere.memoPos.set(str, { pos, normal });
 		}
 		if (color === 'rand') {
@@ -145,10 +147,10 @@ export class Sphere extends Model {
 			this.fillColor(color);
 		}
 		this.type = 'Sphere';
-    }
-    
-    static memoPos = new Map<string, { pos: PosDataType, normal: Array<number> }>();
-    
+	}
+
+	static memoPos = new Map<string, { pos: PosDataType, normal: Array<number> }>();
+
 	/**
 	 * 填充颜色
 	 * @param color vec4或者vec3 (0 -> 255),或0x1890ff
