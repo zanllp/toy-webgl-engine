@@ -96,20 +96,41 @@ export const TexData = {
     null(gl: WebGLRenderingContext, width: number, height: number, target: Texture, data?: ArrayLike<number>) {
         return TexData.write(gl, width, height, target, data, null);
     },
+    /**
+     * 写入图像到指定纹理,如果是立方体贴图需要自己生成Mipmap
+     * @param gl 
+     * @param image 图像
+     * @param target 纹理类型
+     * @param tex 指定纹理，未定义时新建
+     */
     writeImage(gl: WebGLRenderingContext, image: HTMLImageElement, target: Texture, tex?: WebGLTexture | null) {
-        const texture = (tex === null || tex === undefined) ? gl.createTexture() : tex;
+        const texture = (tex === undefined) ? gl.createTexture() : tex;
         const t = target === Texture.T2D ? gl.TEXTURE_2D : gl.TEXTURE_CUBE_MAP;
         gl.bindTexture(t, texture);
         gl.texImage2D(gl[target], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-        gl.generateMipmap(t);
+        if (target === Texture.T2D) {
+            gl.generateMipmap(t);
+        }
         return texture;
     },
+    /**
+     * 写数据到指定纹理,如果是立方体贴图需要自己生成Mipmap
+     * @param gl 
+     * @param width 
+     * @param height 
+     * @param target 纹理类型
+     * @param data 数据，可为null
+     * @param tex 指定纹理，未定义时新建
+     */
     write(gl: WebGLRenderingContext, width: number, height: number, target: Texture, data?: ArrayLike<number> | null, tex?: WebGLTexture | null, ) {
-        const texture = (tex === null || tex === undefined) ? gl.createTexture() : tex;
+        const texture = (tex === undefined) ? gl.createTexture() : tex;
         const t = target === Texture.T2D ? gl.TEXTURE_2D : gl.TEXTURE_CUBE_MAP;
         gl.bindTexture(t, texture);
+        // rgba 4个通道各8位
         gl.texImage2D(gl[target], 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data ? new Uint8Array(data) : null);
-        gl.generateMipmap(t);
+        if (target === Texture.T2D) {
+            gl.generateMipmap(t);
+        }
         return texture;
     },
 };
@@ -154,14 +175,14 @@ export type attrResType = { set(data: Array<number>, id?: any): void, get(id: an
 export type attrType<A> = { [p in keyof A]: attrResType };
 export const programInfoFromKey = <A extends constraintNull, U extends constraintAll>({ gl, program, attribute, uniform }:
     { gl: WebGLRenderingContext; program: WebGLProgram; attribute: A; uniform: U; }) => {
-    const switchProgram = () => {
+    const switch2BindProgram = () => {
         if (gl.getParameter(gl.CURRENT_PROGRAM) !== program) {
             gl.useProgram(program);
         }
     };
-    switchProgram();
+    switch2BindProgram();
     const loc = {} as { [p in keyof A]: number } & { [p in keyof U]: WebGLUniformLocation | null };
-    const res = {} as { program: WebGLProgram; loc: typeof loc; src: A & U } & unifType<U> & attrType<A>; // 如果定义在一个即将展开的对象上,setget生效
+    const res = {} as { program: WebGLProgram; loc: typeof loc; src: A & U, switch2BindProgram: () => void } & unifType<U> & attrType<A>; // 如果定义在一个即将展开的对象上,setget生效
     Object.keys(attribute).forEach(x => {
         (loc as any)[x] = gl.getAttribLocation(program, x);
         const size = attribute[x];
@@ -174,7 +195,7 @@ export const programInfoFromKey = <A extends constraintNull, U extends constrain
                 }
             },
             set(data: any, id?: any) {
-                switchProgram();
+                switch2BindProgram();
                 if (id === undefined) {
                     BufferData.write(gl, data, size, loc[x]);
                 } else {
@@ -194,11 +215,11 @@ export const programInfoFromKey = <A extends constraintNull, U extends constrain
         const eset = createSetUniformFn(gl, uloc);
         Object.defineProperty(res, x, {
             set(_: any) {
-                switchProgram();
+                switch2BindProgram();
                 eset(_);
             },
             get() {
-                switchProgram();
+                switch2BindProgram();
                 return gl.getUniform(program, uloc as any);
             }
         });
@@ -210,6 +231,7 @@ export const programInfoFromKey = <A extends constraintNull, U extends constrain
     });
     res.program = program;
     res.loc = loc;
+    res.switch2BindProgram = switch2BindProgram;
     res.src = { ...attribute, ...uniform };
     return res;
 };

@@ -6,7 +6,7 @@ import { vec3, mat4 } from 'gl-matrix';
  */
 export class Assembly extends Model {
 	public constructor(...models: Array<Model>) {
-		super([], []);
+		super([]);
 		for (const i of models) {
 			this.color = [...this.color, ...i.color];
 			if (mat4.equals(i.modelMat, mat4.create())) {
@@ -25,7 +25,10 @@ export class Assembly extends Model {
 		}
 		this.type = 'Assembly';
 	}
+
 	public readonly position = new Array<number>();
+	
 	public readonly normal = new Array<number>();
+	
 	public readonly color = new Array<number>();
 }

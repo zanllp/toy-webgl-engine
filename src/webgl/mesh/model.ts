@@ -1,13 +1,38 @@
 import { PosDataType, createSetMatFn, calcNormal, randColor, SetMatType } from './util';
-import { mat4 } from 'gl-matrix';
+import { mat4, vec3 } from 'gl-matrix';
 
 export class Model {
-	constructor(data: PosDataType, normal?: number[]) {
+
+	get childArray() {
+		return Array.from(this.children);
+	}
+
+    /**
+     * 获取最终模型转换矩阵 = ...爷爷级矩阵 x 父级矩阵 x 自己的矩阵
+     */
+	public get finalModelmat(): mat4 {
+		if (this.parent) {
+			const mat = mat4.create();
+			return mat4.mul(mat, this.parent.finalModelmat, this.modelMat);
+		} else {
+			return this.modelMat;
+		}
+	}
+
+	/**
+	 * 获取模型位置
+	 */
+	public get modelPos() {
+		return mat4.getTranslation(vec3.create(), this.finalModelmat);
+	}
+
+	constructor(data: PosDataType, size?: number[], normal?: number[]) {
 		this.data = data;
+		this.size = size;
 		this.setModelMat = createSetMatFn<Model>('modelMat');
-        const vertex = Model.memoPosfNormal.get(this.data);
-        // 若派生类有提供法线数据一律用派生类的
-		if (vertex) { 
+		const vertex = Model.memoPosfNormal.get(this.data);
+		// 若派生类有提供法线数据一律用派生类的
+		if (vertex) {
 			this.position = vertex.position;
 			if (normal) {
 				this.normal = normal;
@@ -33,13 +58,8 @@ export class Model {
 	public parent?: Model;
 	public modelMat = mat4.create();
 	public color = new Array<number>();
-    static memoPosfNormal = new Map<PosDataType, { position: Array<number>, normal: Array<number> }>();
-    
-
-
-	get childArray() {
-		return Array.from(this.children);
-    }
+	public readonly size?: number[];
+	static memoPosfNormal = new Map<PosDataType, { position: Array<number>, normal: Array<number> }>();
 
     /**
      * 添加子级模型
@@ -50,20 +70,20 @@ export class Model {
 			x.parent = this;
 			this.children.add(x);
 		});
-    }
-    
+	}
+
 	public fillRandColor(factor = 1) {
 		this.color = randColor(this.data, factor);
-    }
-    
+	}
+
 	public render(gl: WebGLRenderingContext) {
 		gl.drawArrays(gl.TRIANGLES, 0, this.position.length / 3);
-    }
-    
+	}
+
 	public setModelMat(fn: SetMatType): mat4 {
 		throw new Error('Method not implemented.');
-    }
-    
+	}
+
 	/**
 	 * 压入一个矩阵,右乘当前模型矩阵
 	 * @param mat 当为mat4类型直接右乘。当为函数会提供一个单位矩阵以供修改
@@ -84,28 +104,16 @@ export class Model {
 		}
 		this.matrixStack.push(_mat);
 		mat4.mul(this.modelMat, this.modelMat, _mat);
-    }
-    
+	}
+
 	/**
-	 * 弹出栈，模型矩阵返回上次压入前的状态
+	 * 弹出栈，模型矩阵回到上次压入前的状态
 	 */
 	public popMat() {
 		const mat = this.matrixStack.pop();
 		if (mat) {
 			mat4.invert(mat, mat);
 			mat4.mul(this.modelMat, this.modelMat, mat);
-		}
-	}
-
-    /**
-     * 获取最终模型转换矩阵 = ...爷爷级矩阵 x 父级矩阵 x 自己的矩阵
-     */
-	public get finalModelmat(): mat4 {
-		if (this.parent) {
-			const mat = mat4.create();
-			return mat4.mul(mat, this.parent.finalModelmat, this.modelMat);
-		} else {
-			return this.modelMat;
 		}
 	}
 }

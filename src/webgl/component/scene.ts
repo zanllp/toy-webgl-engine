@@ -9,11 +9,17 @@ export class Scene<T extends Info> implements IRenderAble {
         this.gl = gl;
         this.info = info;
     }
+    
     public gl: WebGLRenderingContext;
+
     public info: T;
+
     public projectionMat = mat4.create();
+
     public viewMat = mat4.create();
+
     public models = new Array<Model>();
+
     public render(next?: { modelMat: mat4, child: Model }) {
         const { info, gl } = this;
         if (next === undefined) {
@@ -46,6 +52,7 @@ export class Scene<T extends Info> implements IRenderAble {
             }));
         }
     }
+
     public addModel(...model: Model[]) {
         this.models.push(...model);
     }
