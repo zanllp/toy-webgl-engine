@@ -1,11 +1,10 @@
 import { mat2, mat3, mat4, vec3, vec4 } from 'gl-matrix';
-import negX from './Sky/skybox_nx.jpg';
-import negY from './Sky/skybox_ny.jpg';
-import negZ from './Sky/skybox_nz.jpg';
-import posX from './Sky/skybox_px.jpg';
-import posY from './Sky/skybox_py.jpg';
-import posZ from './Sky/skybox_pz.jpg';
-// tslint:disable-next-line: max-line-length
+import negX from './sky/skybox_nx.jpg';
+import negY from './sky/skybox_ny.jpg';
+import negZ from './sky/skybox_nz.jpg';
+import posX from './sky/skybox_px.jpg';
+import posY from './sky/skybox_py.jpg';
+import posZ from './sky/skybox_pz.jpg';
 import { ToyEngine } from './toyEngine';
 import { ui } from './ui';
 import { degToRad } from './mesh/util';
