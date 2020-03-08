@@ -14,7 +14,6 @@ export class DirectionalLight extends light {
 
     setLightParams(material: baseMaterialType, gl: WebGLRenderingContext) {
         const { directional } = this;
-        material.switch2BindProgram();
         const directLoc = material.getUnifLoc(DirectionalLight.varNameDirectional);
         gl.uniform3f(directLoc, directional[0], directional[1], directional[2]);
     }

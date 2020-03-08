@@ -1,5 +1,5 @@
 import { createShaderMaterial } from '../glBase';
-import { mat4 } from 'gl-matrix';
+import { mat4, vec3 } from 'gl-matrix';
 import { IRenderAble } from '../toyEngine';
 
 
@@ -12,6 +12,7 @@ const createMeshLineMaterial = (gl: WebGLRenderingContext) => createShaderMateri
 		uniform: {
 			u_proj: mat4.create(),
 			u_view: mat4.create(),
+			u_color:vec3.create()
 		}
 	},
 	source: {
@@ -25,8 +26,9 @@ const createMeshLineMaterial = (gl: WebGLRenderingContext) => createShaderMateri
 		}`,
 		fragment: `
 		precision mediump float; 
+		uniform vec3 u_color;
 		void main() {
-			gl_FragColor = vec4(1.,1.,1.,1);
+			gl_FragColor = vec4(u_color/255.,1);
 		}
 		`
 	}
@@ -61,16 +63,17 @@ export class MeshLine implements IRenderAble {
 		this.info = createMeshLineMaterial(gl);
 		this.position = dst.flat(1);
 	}
+	public color = vec3.fromValues(55,55,55);
 
 	public size: number;
 
-	projectionMat: mat4 = mat4.create();
+	public projectionMat: mat4 = mat4.create();
 
-	viewMat: mat4 = mat4.create();
+	public viewMat: mat4 = mat4.create();
 
-	gl: WebGLRenderingContext;
+	public gl: WebGLRenderingContext;
 
-	info: ReturnType<typeof createMeshLineMaterial>;
+	public info: ReturnType<typeof createMeshLineMaterial>;
 
 	position: Array<number>;
 
@@ -78,6 +81,7 @@ export class MeshLine implements IRenderAble {
 		const { gl, info } = this;
 		info.u_proj = this.projectionMat;
 		info.u_view = this.viewMat;
+		info.u_color = this.color;
 		info.a_pos.set(this.position, this);
 		gl.drawArrays(gl.LINES, 0, this.position.length / this.size);
 	}

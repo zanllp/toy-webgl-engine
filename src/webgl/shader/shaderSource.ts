@@ -1,17 +1,27 @@
 import { DirectionalLight } from '../light/directionLight';
+import { CubeTexture } from '../texture';
 
 export type defineEnum =
     'LIGHT' |
-    'DIRECTIONAL_LIGHT';
+    'DIRECTIONAL_LIGHT' |
+    'TEX_CUBE' |
+    'TEX_2D';
 
 export type variableEnum =
-    typeof DirectionalLight.varNameDirectional;
+    typeof DirectionalLight.varNameDirectional |
+    typeof CubeTexture.varNameSize |
+    typeof CubeTexture.varNameUv |
+    'u_texture';
+
+export type varType = 'attribute' | 'uniform' | 'varying';
+export type dataType = 'mat3' | 'mat4' | 'vec3' | 'samplerCube' | 'sampler2d';
+export type shaderType = 'all' | 'vertex' | 'fragment';
 
 export type variableType = {
     name: variableEnum;
-    type: 'attribute' | 'uniform' | 'varying';
-    varType: 'mat3' | 'mat4' | 'vec3';
-    target: 'all' | 'vertex' | 'fragment'
+    varType: varType;
+    dataType: dataType;
+    target: shaderType
 };
 
 export class ShaderSource {
@@ -27,33 +37,17 @@ export class ShaderSource {
             vertex += `#define ${x}\n`;
             fragment += `#define ${x}\n`;
         });
-        const variable = this.variableArray;
-        variable.filter(x => x.type === 'uniform').forEach(x => {
+        const variable = this.variableArray.sort((a, b) => a.varType.length - b.name.length);
+        variable.forEach(x => {
             if (x.target === 'all' || x.target === 'fragment') {
-                fragment += `${x.type} ${x.varType} ${x.name};`;
+                fragment += `${x.varType} ${x.dataType} ${x.name};\n`;
             }
             if (x.target === 'all' || x.target === 'vertex') {
-                vertex += `${x.type} ${x.varType} ${x.name};`;
+                vertex += `${x.varType} ${x.dataType} ${x.name};\n`;
             }
         });
-        variable.filter(x => x.type === 'attribute').forEach(x => {
-            if (x.target === 'all' || x.target === 'fragment') {
-                fragment += `${x.type} ${x.varType} ${x.name};`;
-            }
-            if (x.target === 'all' || x.target === 'vertex') {
-                vertex += `${x.type} ${x.varType} ${x.name};`;
-            }
-        });
-        variable.filter(x => x.type === 'varying').forEach(x => {
-            if (x.target === 'all' || x.target === 'fragment') {
-                fragment += `${x.type} ${x.varType} ${x.name};`;
-            }
-            if (x.target === 'all' || x.target === 'vertex') {
-                vertex += `${x.type} ${x.varType} ${x.name};`;
-            }
-        });
-        vertex = vertex + vertexSource;
-        fragment = fragmentSource.replace('{{insert}}',fragment);
+        vertex = vertexSource.replace('{{insert}}', vertex);
+        fragment = fragmentSource.replace('{{insert}}', fragment);
         return {
             vertex,
             fragment
@@ -62,16 +56,14 @@ export class ShaderSource {
     public addDefine(def: defineEnum) {
         this.define.add(def);
     }
-    public addVariable(
-        target: 'all' | 'vertex' | 'fragment',
-        type: 'attribute' | 'uniform' | 'varying',
-        varType: 'mat3' | 'mat4' | 'vec3',
-        name: variableEnum) {
-        this.variable.add({ name, type, varType, target });
+    public addVariable(target: shaderType, varType: varType, dataType: dataType, name: variableEnum) {
+        this.variable.add({ name, dataType, varType, target });
     }
 }
 
 const vertexSource = `
+{{insert}}
+
 uniform mat4 u_proj;
 uniform mat4 u_view;
 uniform mat4 u_model;
@@ -81,20 +73,30 @@ attribute vec3 a_pos;
 attribute vec3 a_color;
 attribute vec3 a_normal;
 varying vec3 v_normal;
+#ifndef TEX_CUBE
 varying vec3 v_color;
+#endif
 
 void main() {
     vec4 worldPos = u_model * vec4(a_pos,1); 
     gl_Position =   u_proj * u_view * worldPos;
-    v_color = a_color; 
+#ifdef TEX_CUBE
+    ${CubeTexture.varNameUv} = a_pos/${CubeTexture.varNameSize};
+#else
+    v_color = a_color;
+#endif
     v_normal = mat3(u_world) * a_normal;
 }`;
 
 
 const fragmentSource = `
 precision mediump float; // 默认精度
+
 {{insert}}
+
+#ifndef TEX_CUBE
 varying vec3 v_color;
+#endif
 varying vec3 v_normal;
 
 
@@ -106,8 +108,15 @@ varying vec3 v_normal;
 
 void main() {
     vec3 normal = normalize(v_normal);
+#ifdef TEX_CUBE
+    gl_FragColor = textureCube(u_texture,  ${CubeTexture.varNameUv}-.5);
+#elif defined(TEX_2D)
+#error undefined TEX_2D
+#else
     gl_FragColor = vec4(v_color, 1);
-#ifdef DIRECTIONAL_LIGHT
+#endif
+
+#ifdef DIRECTIONAL_LIGHT 
     float light = lightFactor(normal, ${DirectionalLight.varNameDirectional});
     gl_FragColor.rgb *= light;
 #endif

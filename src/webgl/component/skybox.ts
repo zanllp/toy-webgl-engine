@@ -1,7 +1,8 @@
-import { createShaderMaterial, TexData, Texture } from '../glBase';
+import { createShaderMaterial, } from '../glBase';
 import { IRenderAble } from '../toyEngine';
 import { mat4 } from 'gl-matrix';
 import { modelMat2WorldMat } from '../mesh/util';
+import { CubeTexture } from '../texture';
 
 const createPre = (gl: WebGLRenderingContext) => createShaderMaterial({
 	gl,
@@ -49,19 +50,19 @@ export class SkyBox implements IRenderAble {
      * @param texAll 六个面纹理的链接
      * @param onLoad 纹理加载完成回调
      */
-	public constructor(gl: WebGLRenderingContext,
-		texAll: { posX: string; posY: string; posZ: string; negX: string; negY: string; negZ: string; },
-		onLoad?: () => void) {
+	public constructor(gl: WebGLRenderingContext, cube: CubeTexture) {
 		this.gl = gl;
 		this.info = createPre(gl);
-		if (onLoad) {
-			this.onLoad = onLoad;
-		}
-		this.loadTex(texAll);
+		this.tex = cube;
+		this.tex.loadTex(gl);
 	}
 
-	projectionMat: mat4 = mat4.create();
-	viewMat: mat4 = mat4.create();
+	public tex: CubeTexture;
+
+	public projectionMat: mat4 = mat4.create();
+
+	public viewMat: mat4 = mat4.create();
+
 	public data = [
 		-1, -1,
 		1, -1,
@@ -71,7 +72,6 @@ export class SkyBox implements IRenderAble {
 		1, 1,
 	];
 	public gl: WebGLRenderingContext;
-	public buf?: WebGLBuffer | null;
 	public info: ReturnType<typeof createPre>;
 	public render() {
 		const { gl, info } = this;
@@ -87,28 +87,6 @@ export class SkyBox implements IRenderAble {
 		// Draw the geometry.
 		gl.drawArrays(gl.TRIANGLES, 0, 1 * 6);
 	}
-	private onLoad() { }
-	private loadTex(texAll: { posX: string; posY: string; posZ: string; negX: string; negY: string; negZ: string; }) {
-		const { gl } = this;
-		const texture = gl.createTexture();
-		gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture);
-		const allPromise = Object.entries(texAll)
-			.map(([k, v]) => ({ url: v, target: (Texture as any)[k] as Texture }))
-			.map((faceInfo) => {
-				const { target, url } = faceInfo;
-				TexData.write(gl, 512, 512, target, null, texture);
-				const image = new Image();
-				image.src = url;
-				return new Promise(x => {
-					image.addEventListener('load', () => {
-						TexData.writeImage(gl, image, target, texture);
-						x();
-					});
-				});
-			});
-		Promise.all(allPromise).then(this.onLoad.bind(this));
-		gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
-		gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-	}
+
 
 }

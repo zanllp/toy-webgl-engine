@@ -5,7 +5,7 @@ const _o = (bit: number) => 1 << bit;
 export class ShaderOption {
     public value = 0;
     public static DIRECTION_LIGHT = _o(0);
-    public static SPOT_LIGH = _o(1);
+    public static SPOT_LIGHT = _o(1);
     public static SMAPLER_2D = _o(2);
     public static SMAPLER_CUBE = _o(3);
 
