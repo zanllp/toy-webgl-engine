@@ -1,9 +1,9 @@
-import { createProgramInfo, TexData, Texture } from '../glBase';
+import { createShaderMaterial, TexData, Texture } from '../glBase';
 import { IRenderAble } from '../toyEngine';
 import { mat4 } from 'gl-matrix';
 import { modelMat2WorldMat } from '../mesh/util';
 
-const createPre = (gl: WebGLRenderingContext) => createProgramInfo({
+const createPre = (gl: WebGLRenderingContext) => createShaderMaterial({
 	gl,
 	location: {
 		attribute: {

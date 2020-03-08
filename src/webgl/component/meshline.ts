@@ -1,9 +1,9 @@
-import { createProgramInfo } from '../glBase';
+import { createShaderMaterial } from '../glBase';
 import { mat4 } from 'gl-matrix';
 import { IRenderAble } from '../toyEngine';
 
 
-const createMeshLineInfo = (gl: WebGLRenderingContext) => createProgramInfo({
+const createMeshLineMaterial = (gl: WebGLRenderingContext) => createShaderMaterial({
 	gl,
 	location: {
 		attribute: {
@@ -58,7 +58,7 @@ export class MeshLine implements IRenderAble {
 		});
 		this.size = is3d ? 3 : 2;
 		this.gl = gl;
-		this.info = createMeshLineInfo(gl);
+		this.info = createMeshLineMaterial(gl);
 		this.position = dst.flat(1);
 	}
 
@@ -70,7 +70,7 @@ export class MeshLine implements IRenderAble {
 
 	gl: WebGLRenderingContext;
 
-	info: ReturnType<typeof createMeshLineInfo>;
+	info: ReturnType<typeof createMeshLineMaterial>;
 
 	position: Array<number>;
 

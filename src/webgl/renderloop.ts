@@ -4,51 +4,57 @@ import { setStateType } from './mesh/util';
  * 渲染循环，rqa实现
  */
 export class RenderLoop {
+
+	/**
+	 * 在任务运行时抛异常停止循环
+	 */
+	public stopOnError = false;
+
     /**
      * rqa的id
      */
-    public rqaId?: number;
-    
+	public rqaId?: number;
+
     /**
      * 近十次帧数的平均值
      */
-    public fps: number = 0;
-    
+	public fps: number = 0;
+
     /**
      * 整个生命周期的平均帧数
      */
-    public averageFps: number = -1;
-    
+	public averageFps: number = -1;
+
     /**
      * 运行状态
      */
-    public state: 'run' | 'stop' = 'stop';
+	public state: 'run' | 'stop' = 'stop';
 
     /**
      * 循环次数
      */
-    public count: number = 0;
-    
+	public count: number = 0;
+
     /**
      * 渲染任务
      */
-    public renderTask?: (t: number) => any;
-    
+	public renderTask?: (t: number) => any;
+
     /**
      * 任务
      */
-    public task = new Array<(t: number) => any>();
-    
+	public task = new Array<(t: number) => any>();
+
     /**
      * 一次任务，在每次运行后都会清空
      */
 	public onceTask = new Array<(t: number) => any>();
-    
+
     /**
      * 上次记录时间
      */
-    private lastRecTime = 0;
-    
+	private lastRecTime = 0;
+
     /**
      * 运行循环
      */
@@ -56,20 +62,27 @@ export class RenderLoop {
 		this.state = 'run';
 		let lastT = Date.now();
 		const loop = (t: number) => {
-			this.rqaId = requestAnimationFrame(loop);
-			const dt = t - lastT;
-			this.task.forEach(x => x(dt));
-			this.onceTask.forEach(x => x(dt));
-			this.renderTask?.call(null, dt);
-			lastT = t;
-			if (this.onceTask.length !== 0) {
-				this.onceTask = [];
+			try {
+				this.rqaId = requestAnimationFrame(loop);
+				const dt = t - lastT;
+				this.task.forEach(x => x(dt));
+				this.onceTask.forEach(x => x(dt));
+				this.renderTask?.call(null, dt);
+				lastT = t;
+				if (this.onceTask.length !== 0) {
+					this.onceTask = [];
+				}
+				this.calcFps(t);
+			} catch (error) {
+				if (this.stopOnError) {
+					this.stop();
+				}
+				throw error;
 			}
-			this.calcFps(t);
 		};
 		this.rqaId = requestAnimationFrame(loop);
-    }
-    
+	}
+
     /**
      * 停止循环
      */
@@ -78,8 +91,8 @@ export class RenderLoop {
 		if (this.rqaId !== undefined) {
 			cancelAnimationFrame(this.rqaId);
 		}
-    }
-    
+	}
+
     /**
      * 添加任务，会排除掉已存在的
      * @param tasks 
@@ -90,20 +103,20 @@ export class RenderLoop {
 				this.task.push(x);
 			}
 		});
-    }
-    
-     /**
-     * 添加一次任务，会排除掉已存在的
-     * @param tasks 
-     */
+	}
+
+	/**
+	* 添加一次任务，会排除掉已存在的
+	* @param tasks 
+	*/
 	public addOnceTask(...tasks: Array<(t: number) => any>) {
 		tasks.forEach(x => {
 			if (this.onceTask.indexOf(x) === -1) {
 				this.onceTask.push(x);
 			}
 		});
-    }
-    
+	}
+
     /**
      * 计算帧率
      * @param t 
