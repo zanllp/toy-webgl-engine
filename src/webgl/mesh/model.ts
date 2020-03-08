@@ -1,9 +1,10 @@
 import { PosDataType, createSetMatFn, calcNormal, randColor, SetMatType } from './util';
 import { mat4, vec3 } from 'gl-matrix';
+import { baseMaterialType } from '../shader/general';
 
 export class Model {
 
-	get childArray() {
+	public get childArray() {
 		return Array.from(this.children);
 	}
 
@@ -55,6 +56,7 @@ export class Model {
 	public readonly normal: Array<number>;
 	public readonly children = new Set<Model>();
 	public readonly matrixStack = new Array<mat4>();
+	public material?: baseMaterialType;
 	public parent?: Model;
 	public modelMat = mat4.create();
 	public color = new Array<number>();

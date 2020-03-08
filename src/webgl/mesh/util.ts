@@ -111,7 +111,7 @@ export type setStateType<V> = (Partial<V> | ((s: V) => Partial<V>) | { action: '
  * @param render 渲染函数 
  * @param s 包含state键的对象，用来作为状态的唯一源，和渲染器的参数
  */
-export const createSetStateFn = <T, V, U extends { state: V }>(gl: WebGLRenderingContext, programInfo: T, render: (gl: WebGLRenderingContext, info: T, v?: V) => any, s: U) => {
+export const createSetStateFn = </*T, */V, U extends { state: V }>(/*gl: WebGLRenderingContext, programInfo: T, render: (gl: WebGLRenderingContext, info: T, v?: V) => any, */s: U) => {
     //const throttleRender = throttle((s: U) => render(gl, programInfo, s.state), 12);
     return (set: setStateType<V>) => {
         let { state } = s;

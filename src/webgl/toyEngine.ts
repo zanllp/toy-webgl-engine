@@ -1,9 +1,9 @@
 import { mat4 } from 'gl-matrix';
 import { attrResType, resize } from './glBase';
-import { createSetMatFn, createSetStateFn, SetMatType, setStateType, degToRad } from './mesh/util';
+import { createSetMatFn, createSetStateFn, degToRad, SetMatType, setStateType } from './mesh/util';
 import { RenderLoop } from './renderloop';
 
-export type Info = {
+export type ShaderMaterialRestrict = {
 	a_pos: attrResType;
 	a_normal?: attrResType;
 	a_color?: attrResType;
@@ -16,14 +16,24 @@ export type Info = {
 };
 
 
-export type projParamsType = { fovy: number, aspect: number, near: number, far: number } |
-	((gl: WebGLRenderingContext) => ({ fovy: number, aspect: number, near: number, far: number }));
-export class ToyEngine<T extends { [x: string]: Info } = any, S = any>  {
-	constructor(gl: WebGLRenderingContext, info: T, state: S) {
+export type projParamsType = {
+	fovy: number;
+	aspect: number;
+	near: number;
+	far: number
+} | ((gl: WebGLRenderingContext) => ({
+	fovy: number;
+	aspect: number;
+	near: number;
+	far: number
+}));
+
+
+export class ToyEngine<S = any>  {
+	constructor(gl: WebGLRenderingContext, state: S) {
 		this.gl = gl;
-		this.info = info;
 		this.state = state;
-		this.setState = createSetStateFn(gl, info, this.renderFrame.bind(this), this);
+		this.setState = createSetStateFn(this);
 		this.setProjectionMat = createSetMatFn<ToyEngine>('projectionMat');
 		this.setViewMat = createSetMatFn<ToyEngine>('viewMat');
 		this.loop.renderTask = this.renderFrame.bind(this);
@@ -45,10 +55,6 @@ export class ToyEngine<T extends { [x: string]: Info } = any, S = any>  {
 	 */
 	public loop = new RenderLoop();
 
-	/**
-	 * 提供的所有程序信息
-	 */
-	public info: T;
 
 	/**
 	 * 投影矩阵

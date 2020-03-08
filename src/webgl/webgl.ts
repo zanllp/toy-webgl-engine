@@ -1,34 +1,28 @@
 import { mat2, mat3, mat4, vec3, vec4 } from 'gl-matrix';
+import { MeshLine, Scene, SkyBox } from './component/index';
+import { Assembly, Box, degToRad, Model, Sphere } from './mesh/index';
+import { createKeyListenerTask } from './renderloop';
 import negX from './sky/skybox_nx.jpg';
 import negY from './sky/skybox_ny.jpg';
 import negZ from './sky/skybox_nz.jpg';
 import posX from './sky/skybox_px.jpg';
 import posY from './sky/skybox_py.jpg';
 import posZ from './sky/skybox_pz.jpg';
+import { modifyWindow, printMat, setCSS, trimNumber } from './tool';
 import { ToyEngine } from './toyEngine';
 import { ui } from './ui';
-import { degToRad } from './mesh/util';
-import { Model } from './mesh/model';
-import { MeshLine } from './component/meshline';
-import { SkyBox } from './component/skybox';
-import { createKeyListenerTask } from './renderloop';
-import { setCSS, trimNumber, modifyWindow, printMat } from './tool';
-import { Box } from './mesh/box';
-import { Sphere } from './mesh/sphere';
-import { Assembly } from './mesh/assembly';
-import { createProgramInfo } from './glBase';
-import { Scene } from './component/scene';
+import { DirectionalLight } from './light/directionLight';
 
 modifyWindow({ mat3, printMat, vec3, vec4, mat2, mat4, d2r: degToRad });
 export const webgl = (gl: WebGLRenderingContext) => {
     setTimeout(() => {
         const app = new App(gl);
+        app.loop.stopOnError = true;
         app.loop.run();
         document.querySelector('#hint')?.remove();
     });
 };
 
-type infoT = ReturnType<typeof createInfo>;
 const initState = {
     z: 1600, y: 600, x: 0,
     rotateCameraY: 0, rotateCameraX: 0, scale: 0.3,
@@ -42,9 +36,9 @@ const initState = {
     view2targetDist: 0
 };
 
-export class App extends ToyEngine<infoT, typeof initState> {
+export class App extends ToyEngine<typeof initState> {
     constructor(gl: WebGLRenderingContext) {
-        super(gl, createInfo(gl), initState);
+        super(gl, initState);
         const setS = this.setState;
         window.addEventListener('resize', this.resize.bind(this));
         document.addEventListener('wheel', x => {
@@ -125,11 +119,10 @@ export class App extends ToyEngine<infoT, typeof initState> {
         const skyBox = new SkyBox(gl, { posX, posY, posZ, negX, negY, negZ });
         this.renderQuene.push(this.model.scene, skyBox, meshLine);
     }
-    public model = createModel(this.gl, this.info);
+    public model = createModel(this.gl);
     public clicked = false;
 
     public render() {
-        const { info } = this;
         let s = this.state;
         if (s.lookAt) {
             const tPos = s.lookAt.modelPos;
@@ -145,15 +138,14 @@ export class App extends ToyEngine<infoT, typeof initState> {
         }
         s = this.state;
         // 右向左（倒）移动物体坐标，左向右（顺）移动坐标轴
-        const { ele } = info;
         const { box0, sphere } = this.model;
         const lightMat = mat4.create();
         mat4.fromYRotation(lightMat, degToRad(1));
         const res = vec3.transformMat4(vec3.create(), s.light, lightMat);
-        ele.u_lightDirectional = res;
+        this.model.light.directional = res;
         this.setState({ light: Array.from(res) });
-        ele.u_shininess = s.shininess;
-        ele.u_viewWorldPos = this.camerePos;
+        //ele.u_shininess = s.shininess;
+        //ele.u_viewWorldPos = this.camerePos;
         box0.pushMat(x => {
             box0.popMat();
             mat4.translate(x, x, [50, 50, 50]);
@@ -309,7 +301,7 @@ export class App extends ToyEngine<infoT, typeof initState> {
 
 
 
-const createModel = (gl: WebGLRenderingContext, info: infoT) => {
+const createModel = (gl: WebGLRenderingContext) => {
     const box0 = new Box({ color: 0x1453ad });
     box0.setModelMat(x => mat4.translate(x, x, [400, 0, 0]));
     const sphere = new Sphere({ radius: 400, color: 0x1890ff });
@@ -326,95 +318,9 @@ const createModel = (gl: WebGLRenderingContext, info: infoT) => {
     const box = new Box({ x: 999, y: 999, z: 999, color: 'rand', reverse: true });
     const asm = new Assembly(box, box2);
     asm.setModelMat(x => mat4.translate(x, x, [1500, 0, 500]));
-    const scene = new Scene(gl, info.ele, box0, sphere, asm);
-    return { scene, box0, sphere, asm };
+    const scene = new Scene(gl, box0, sphere, asm);
+    const light = new DirectionalLight();
+    scene.light.push(light);
+    return { scene, box0, sphere, asm, light };
 };
-
-
-
-const createInfo = (gl: WebGLRenderingContext) => ({
-    ele: createProgramInfo({
-        gl,
-        location: {
-            attribute: {
-                a_pos: 3,
-                a_color: 3,
-                a_normal: 3
-            },
-            uniform: {
-                u_proj: mat4.create(),
-                u_view: mat4.create(),
-                u_model: mat4.create(),
-                u_world: mat4.create(),
-                u_lightDirectional: vec3.fromValues(1, 1, 1),
-                u_lightPoint: vec3.fromValues(470, 30, 180),
-                u_viewWorldPos: vec3.create(),
-                u_shininess: 50,
-            }
-        },
-        source: {
-            vertex: vEle,
-            fragment: fEle
-        }
-    }),
-});
-
-
-const vEle = `
-uniform mat4 u_proj;
-uniform mat4 u_view;
-uniform mat4 u_model;
-uniform mat4 u_world;
-uniform vec3 u_lightPoint;
-uniform vec3 u_viewWorldPos;
-attribute vec3 a_pos;
-attribute vec3 a_color;
-attribute vec3 a_normal;
-varying vec3 v_normal;
-varying vec3 v_color;
-varying vec3 v_surface2Light;
-varying vec3 v_surface2View;
-
-void main() {
-    vec4 worldPos = u_model * vec4(a_pos,1); // 自己的坐标转换成世界坐标,a_pos类型vec3是已经转置的所以要放最右边
-    gl_Position =   u_proj * u_view * worldPos; // 按照model view projection也就是倒着的pvm矩阵
-    v_surface2Light = u_lightPoint - worldPos.xyz;
-    v_surface2View = mat3(u_view) * u_viewWorldPos - worldPos.xyz;
-    v_color = a_color; 
-    v_normal = mat3(u_world) * a_normal;
-}`;
-const fEle = `
-precision mediump float; // 默认精度
-uniform vec3 u_lightDirectional;
-uniform float u_shininess;
-varying vec3 v_color;
-varying vec3 v_normal;
-varying vec3 v_surface2Light;
-varying vec3 v_surface2View;
-
-float lightFactor(vec3 normal,vec3 light) {
-    return max(dot(normal,light),.0);
-}
-
-// 表面反射光
-float reflectLight(float light,vec3 normal,vec3 surface2View,vec3 surface2Point) {
-    // 当入射光与反射光的角度越接近时，即两个向量的半向量与法线越接近时越亮
-    vec3 halfVec = normalize(surface2View + surface2Point);
-    float specular = .0;
-    if (light > 0.0) {
-      specular = pow(lightFactor(normal,halfVec), u_shininess);
-    }
-    return specular;
-}
-
-void main() {
-    vec3 normal = normalize(v_normal);
-    vec3 surface2PointLight = normalize(v_surface2Light);
-    vec3 surface2View = normalize(v_surface2View);
-    gl_FragColor = vec4(v_color, 1);
-    float light = lightFactor(normal, surface2PointLight) + lightFactor(normal, u_lightDirectional); // 点光源 + 平行光源
-    gl_FragColor.rgb *= light;
-    gl_FragColor.rgb += reflectLight(light, normal, surface2View, surface2PointLight); 
-}
-`;
 

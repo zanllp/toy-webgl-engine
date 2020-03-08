@@ -173,7 +173,7 @@ export const createSetUniformFn = (gl: WebGLRenderingContext, loc: WebGLUniformL
 export type unifType<U> = { [p in keyof U]: U[p] };
 export type attrResType = { set(data: Array<number>, id?: any): void, get(id: any): Array<number> | undefined };
 export type attrType<A> = { [p in keyof A]: attrResType };
-export const programInfoFromKey = <A extends constraintNull, U extends constraintAll>({ gl, program, attribute, uniform }:
+export const ShaderMaterialFromKey = <A extends constraintNull, U extends constraintAll>({ gl, program, attribute, uniform }:
     { gl: WebGLRenderingContext; program: WebGLProgram; attribute: A; uniform: U; }) => {
     const switch2BindProgram = () => {
         if (gl.getParameter(gl.CURRENT_PROGRAM) !== program) {
@@ -182,7 +182,8 @@ export const programInfoFromKey = <A extends constraintNull, U extends constrain
     };
     switch2BindProgram();
     const loc = {} as { [p in keyof A]: number } & { [p in keyof U]: WebGLUniformLocation | null };
-    const res = {} as { program: WebGLProgram; loc: typeof loc; src: A & U, switch2BindProgram: () => void } & unifType<U> & attrType<A>; // 如果定义在一个即将展开的对象上,setget生效
+    const res = {} as { program: WebGLProgram; loc: typeof loc; src: A & U, switch2BindProgram: () => void, getUnifLoc: (u: string) => WebGLUniformLocation | null }
+        & unifType<U> & attrType<A>; // 如果定义在一个即将展开的对象上,setget生效
     Object.keys(attribute).forEach(x => {
         (loc as any)[x] = gl.getAttribLocation(program, x);
         const size = attribute[x];
@@ -233,12 +234,13 @@ export const programInfoFromKey = <A extends constraintNull, U extends constrain
     res.loc = loc;
     res.switch2BindProgram = switch2BindProgram;
     res.src = { ...attribute, ...uniform };
+    res.getUnifLoc = u => res.loc[u];
     return res;
 };
-export type programInfoT = ReturnType<typeof programInfoFromKey>;
+export type ShaderMaterialT = ReturnType<typeof ShaderMaterialFromKey>;
 
 
-export type programInfoParamsT<A, U> = {
+export type ShaderMaterialParamsT<A, U> = {
     gl: WebGLRenderingContext;
     location: {
         attribute: A;
@@ -254,8 +256,8 @@ export type programInfoParamsT<A, U> = {
  * 创建程序信息
  * @param param0 
  */
-export const createProgramInfo = <A extends constraintNull, U extends constraintAll>({ gl, location, source }: programInfoParamsT<A, U>) => {
+export const createShaderMaterial = <A extends constraintNull, U extends constraintAll>({ gl, location, source }: ShaderMaterialParamsT<A, U>) => {
     const program = createProgram(gl, source.vertex, source.fragment);
-    return programInfoFromKey({ gl, program, attribute: location.attribute, uniform: location.uniform });
+    return ShaderMaterialFromKey({ gl, program, attribute: location.attribute, uniform: location.uniform });
 };
 

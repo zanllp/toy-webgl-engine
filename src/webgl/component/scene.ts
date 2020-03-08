@@ -1,18 +1,19 @@
-import { Info, IRenderAble } from '../toyEngine';
-import { Model } from '../mesh/model';
 import { mat4 } from 'gl-matrix';
+import { light } from '../light/light';
+import { Model } from '../mesh/model';
 import { modelMat2WorldMat } from '../mesh/util';
+import { getMaterial, baseMaterialType, ShaderOption } from '../shader/index';
+import { IRenderAble } from '../toyEngine';
+import { DirectionalLight } from '../light/directionLight';
 
-export class Scene<T extends Info> implements IRenderAble {
-    public constructor(gl: WebGLRenderingContext, info: T, ...models: Array<Model>) {
+export class Scene implements IRenderAble {
+    public constructor(gl: WebGLRenderingContext, ...models: Array<Model>) {
         this.models.push(...models);
         this.gl = gl;
-        this.info = info;
     }
 
     public gl: WebGLRenderingContext;
 
-    public info: T;
 
     public projectionMat = mat4.create();
 
@@ -20,40 +21,73 @@ export class Scene<T extends Info> implements IRenderAble {
 
     public models = new Array<Model>();
 
-    public render(next?: { modelMat: mat4, child: Model }) {
-        const { info, gl } = this;
+    public light = new Array<light>();
+
+    public render(next?: Model) {
         if (next === undefined) {
-            info.u_proj = this.projectionMat;
-            info.u_view = this.viewMat;
-            this.models.forEach(x => {
-                info.u_model = x.modelMat;
-                info.u_world = modelMat2WorldMat(x.modelMat);
-                info.a_color?.set(x.color, x);
-                info.a_normal?.set(x.normal, x);
-                info.a_pos.set(x.position, x);
-                x.render(gl);
-                x.children.forEach(y => this.render({
-                    modelMat: x.modelMat,
-                    child: y
-                }));
-            });
+            this.models.forEach(x => this.setRenderVariable(x));
         } else {
-            const x = next.child;
-            const nextModelMat = mat4.mul(mat4.create(), next.modelMat, x.modelMat);
-            info.u_model = nextModelMat;
-            info.u_world = modelMat2WorldMat(nextModelMat);
-            info.a_color?.set(x.color, x);
-            info.a_normal?.set(x.normal, x);
-            info.a_pos.set(x.position, x);
-            x.render(gl);
-            x.children.forEach(y => this.render({
-                modelMat: nextModelMat,
-                child: y
-            }));
+            this.setRenderVariable(next);
         }
     }
 
     public addModel(...model: Model[]) {
         this.models.push(...model);
+    }
+
+    /**
+     * 设置模型的各个灯的参数
+     * @param material 
+     */
+    private setModelLight(material: baseMaterialType) {
+        this.light.forEach(x => x.setLightParams(material, this.gl));
+    }
+
+    /**
+     * 创建材质着色器
+     */
+    private createMatrial() {
+        const { gl } = this;
+        const op = new ShaderOption();
+        for (const li of this.light) {
+            if (li instanceof DirectionalLight) {
+                op.set(ShaderOption.DIRECTION_LIGHT);
+            }
+        }
+        const material = getMaterial(gl, op);
+        return material;
+    }
+
+    /**
+     * 获取目标材质
+     */
+    private getTargetMaterial(target: Model) {
+        let { material } = target;
+        if (material === undefined) {
+            material = this.createMatrial();
+            target.material = material;
+        }
+        return material;
+    }
+
+    /**
+     * 设置渲染的变量再渲染
+     * @param model 
+     */
+    private setRenderVariable(model: Model) {
+        const { gl } = this;
+        const x = model;
+        const nextModelMat = x.finalModelmat;
+        const info = this.getTargetMaterial(x);
+        this.setModelLight(info);
+        info.u_proj = this.projectionMat;
+        info.u_view = this.viewMat;
+        info.u_model = nextModelMat;
+        info.u_world = modelMat2WorldMat(nextModelMat);
+        info.a_color?.set(x.color, x);
+        info.a_normal?.set(x.normal, x);
+        info.a_pos.set(x.position, x);
+        x.render(gl);
+        x.children.forEach(y => this.render(y));
     }
 }
