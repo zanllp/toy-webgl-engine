@@ -12,7 +12,7 @@ const createMeshLineMaterial = (gl: WebGLRenderingContext) => createShaderMateri
 		uniform: {
 			u_proj: mat4.create(),
 			u_view: mat4.create(),
-			u_color:vec3.create()
+			u_color: vec3.create()
 		}
 	},
 	source: {
@@ -63,7 +63,7 @@ export class MeshLine implements IRenderAble {
 		this.info = createMeshLineMaterial(gl);
 		this.position = dst.flat(1);
 	}
-	public color = vec3.fromValues(55,55,55);
+	public color = vec3.fromValues(55, 55, 55);
 
 	public size: number;
 

@@ -1,12 +1,12 @@
-import { mat4, vec3 } from 'gl-matrix';
+import { mat4 } from 'gl-matrix';
 import { DirectionalLight } from '../light/directionLight';
 import { light } from '../light/light';
 import { Box } from '../mesh';
 import { Model } from '../mesh/model';
 import { modelMat2WorldMat } from '../mesh/util';
 import { baseMaterialType, getMaterial, ShaderOption } from '../shader/index';
-import { IRenderAble } from '../toyEngine';
 import { CubeTexture } from '../texture';
+import { IRenderAble } from '../toyEngine';
 
 export class Scene implements IRenderAble {
     public constructor(gl: WebGLRenderingContext, ...models: Array<Model>) {

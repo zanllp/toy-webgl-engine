@@ -123,6 +123,35 @@ export const createSetUniformFn = (gl: WebGLRenderingContext, loc: WebGLUniformL
 export type unifType<U> = { [p in keyof U]: U[p] };
 export type attrResType = { set(data: Array<number>, id?: any): void, get(id: any): Array<number> | undefined };
 export type attrType<A> = { [p in keyof A]: attrResType };
+export type allLocType<A,U> = { [p in keyof A]: number } & { [p in keyof U]: WebGLUniformLocation | null };
+export type shaderMaterialResType<A,U> = {
+    program: WebGLProgram;
+    /**
+     * 已经定义的所有地址，没有类型推断但确定定义过的也可以通过(info.loc as loc)[key]获取
+     */
+    loc: allLocType<A,U>;
+    /**
+     * 创建材质的原参数
+     */
+    src: A & U;
+    /**
+     * 切换到材质绑定的程序
+     */
+    switch2BindProgram: () => void;
+    /**
+     * 获取uniform地址，给不能类型推断的目标使用的
+     */
+    getUnifLoc: (u: string) => WebGLUniformLocation | null,
+    /**
+     * 设置某个unifrom的值，给不能类型推断的目标使用的
+     */
+    setUnif: (u: string, val: typeAll | number[]) => void,
+    /**
+     * 获取某个attribute值的setget函数，给不能类型推断的目标使用的
+     */
+    getAttrFn: (u: string) => attrResType
+} & unifType<U> & attrType<A>; // 如果定义在一个即将展开的对象上,setget生效
+
 export const ShaderMaterialFromKey = <A extends constraintNull, U extends constraintAll>({ gl, program, attribute, uniform }:
     { gl: WebGLRenderingContext; program: WebGLProgram; attribute: A; uniform: U; }) => {
     const switch2BindProgram = () => {
@@ -131,16 +160,8 @@ export const ShaderMaterialFromKey = <A extends constraintNull, U extends constr
         }
     };
     switch2BindProgram();
-    const loc = {} as { [p in keyof A]: number } & { [p in keyof U]: WebGLUniformLocation | null };
-    const res = {} as {
-        program: WebGLProgram;
-        loc: typeof loc;
-        src: A & U;
-        switch2BindProgram: () => void;
-        getUnifLoc: (u: string) => WebGLUniformLocation | null,
-        setUnif: (u: string, val: typeAll | number[]) => void,
-        getAttrFn: (u: string) => attrResType
-    } & unifType<U> & attrType<A>; // 如果定义在一个即将展开的对象上,setget生效
+    const loc = {} as allLocType<A,U>;
+    const res = {} as shaderMaterialResType<A,U>;
     Object.keys(attribute).forEach(x => {
         (loc as any)[x] = gl.getAttribLocation(program, x);
         const size = attribute[x];
