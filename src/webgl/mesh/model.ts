@@ -1,6 +1,7 @@
 import { PosDataType, createSetMatFn, calcNormal, randColor, SetMatType } from './util';
 import { mat4, vec3 } from 'gl-matrix';
 import { baseMaterialType } from '../shader/general';
+import { Box } from '.';
 
 export class Model {
 
@@ -117,5 +118,9 @@ export class Model {
 			mat4.invert(mat, mat);
 			mat4.mul(this.modelMat, this.modelMat, mat);
 		}
+	}
+
+	public get hasTex() {
+		return this instanceof Box && this.texture !== undefined;
 	}
 }

@@ -1,5 +1,6 @@
 import { mat2, mat3, mat4, vec3, vec4 } from 'gl-matrix';
 import { MeshLine, Scene, SkyBox } from './component/index';
+import { DirectionalLight } from './light/directionLight';
 import { Assembly, Box, degToRad, Model, Sphere } from './mesh/index';
 import { createKeyListenerTask } from './renderloop';
 import negX from './sky/skybox_nx.jpg';
@@ -8,11 +9,12 @@ import negZ from './sky/skybox_nz.jpg';
 import posX from './sky/skybox_px.jpg';
 import posY from './sky/skybox_py.jpg';
 import posZ from './sky/skybox_pz.jpg';
+import { CubeTexture } from './texture';
 import { modifyWindow, printMat, setCSS, trimNumber } from './tool';
 import { ToyEngine } from './toyEngine';
 import { ui } from './ui';
-import { DirectionalLight } from './light/directionLight';
 
+const cubeTex = new CubeTexture({ posX, posY, posZ, negX, negY, negZ });
 modifyWindow({ mat3, printMat, vec3, vec4, mat2, mat4, d2r: degToRad });
 export const webgl = (gl: WebGLRenderingContext) => {
     setTimeout(() => {
@@ -116,13 +118,14 @@ export class App extends ToyEngine<typeof initState> {
         this.loop.addTask(keyTask);
         this.createUi();
         const meshLine = new MeshLine({ range: 16000, num: 100, gl });
-        const skyBox = new SkyBox(gl, { posX, posY, posZ, negX, negY, negZ });
-        this.renderQuene.push(this.model.scene, skyBox, meshLine);
+        const skyBox = new SkyBox(gl, new CubeTexture({ posX, posY, posZ, negX, negY, negZ }));
+        this.renderQuene.push(skyBox);
+        this.renderQuene.push(this.model.scene, meshLine);
     }
     public model = createModel(this.gl);
     public clicked = false;
 
-    public render() {
+    public render(t: number) {
         let s = this.state;
         if (s.lookAt) {
             const tPos = s.lookAt.modelPos;
@@ -139,8 +142,13 @@ export class App extends ToyEngine<typeof initState> {
         s = this.state;
         // 右向左（倒）移动物体坐标，左向右（顺）移动坐标轴
         const { box0, sphere } = this.model;
+        const { material } = box0;
+        if (material) {
+            material.switch2BindProgram();
+            this.gl.uniform1i(material.getUnifLoc('u_texture'), 0);
+        }
         const lightMat = mat4.create();
-        mat4.fromYRotation(lightMat, degToRad(1));
+        mat4.fromYRotation(lightMat, degToRad(t / 16));
         const res = vec3.transformMat4(vec3.create(), s.light, lightMat);
         this.model.light.directional = res;
         this.setState({ light: Array.from(res) });
@@ -302,8 +310,7 @@ export class App extends ToyEngine<typeof initState> {
 
 
 const createModel = (gl: WebGLRenderingContext) => {
-    const box0 = new Box({ color: 0x1453ad });
-    box0.setModelMat(x => mat4.translate(x, x, [400, 0, 0]));
+    const box0 = new Box({ texture: cubeTex, x: 512, y: 512, z: 512 });
     const sphere = new Sphere({ radius: 400, color: 0x1890ff });
     sphere.setModelMat(x => mat4.translate(x, x, [0, 800, 0]));
     for (let i = 0; i < 6; i++) {

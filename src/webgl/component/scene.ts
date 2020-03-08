@@ -1,10 +1,12 @@
-import { mat4 } from 'gl-matrix';
+import { mat4, vec3 } from 'gl-matrix';
+import { DirectionalLight } from '../light/directionLight';
 import { light } from '../light/light';
+import { Box } from '../mesh';
 import { Model } from '../mesh/model';
 import { modelMat2WorldMat } from '../mesh/util';
-import { getMaterial, baseMaterialType, ShaderOption } from '../shader/index';
+import { baseMaterialType, getMaterial, ShaderOption } from '../shader/index';
 import { IRenderAble } from '../toyEngine';
-import { DirectionalLight } from '../light/directionLight';
+import { CubeTexture } from '../texture';
 
 export class Scene implements IRenderAble {
     public constructor(gl: WebGLRenderingContext, ...models: Array<Model>) {
@@ -46,7 +48,7 @@ export class Scene implements IRenderAble {
     /**
      * 创建材质着色器
      */
-    private createMatrial() {
+    private createMatrial(target: Model) {
         const { gl } = this;
         const op = new ShaderOption();
         for (const li of this.light) {
@@ -54,6 +56,13 @@ export class Scene implements IRenderAble {
                 op.set(ShaderOption.DIRECTION_LIGHT);
             }
         }
+        if (target instanceof Box && target.texture) {
+            if (!target.texture.loadSuccess()) {
+                target.texture.loadTex(gl);
+            }
+            op.set(ShaderOption.SMAPLER_CUBE);
+        }
+
         const material = getMaterial(gl, op);
         return material;
     }
@@ -64,7 +73,7 @@ export class Scene implements IRenderAble {
     private getTargetMaterial(target: Model) {
         let { material } = target;
         if (material === undefined) {
-            material = this.createMatrial();
+            material = this.createMatrial(target);
             target.material = material;
         }
         return material;
@@ -79,15 +88,22 @@ export class Scene implements IRenderAble {
         const x = model;
         const nextModelMat = x.finalModelmat;
         const info = this.getTargetMaterial(x);
+        info.switch2BindProgram();
         this.setModelLight(info);
         info.u_proj = this.projectionMat;
         info.u_view = this.viewMat;
         info.u_model = nextModelMat;
         info.u_world = modelMat2WorldMat(nextModelMat);
-        info.a_color?.set(x.color, x);
+        const { size } = model;
+        if (model.hasTex && size) { // 有纹理不需要颜色
+            info.setUnif(CubeTexture.varNameSize, size);
+        } else {
+            info.a_color?.set(x.color, x);
+        }
         info.a_normal?.set(x.normal, x);
         info.a_pos.set(x.position, x);
         x.render(gl);
         x.children.forEach(y => this.render(y));
     }
+
 }

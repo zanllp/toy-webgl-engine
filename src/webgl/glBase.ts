@@ -83,57 +83,7 @@ export const BufferData = {
         return buf;
     }
 };
-export enum Texture {
-    posX = 'TEXTURE_CUBE_MAP_POSITIVE_X',
-    negX = 'TEXTURE_CUBE_MAP_NEGATIVE_X',
-    posY = 'TEXTURE_CUBE_MAP_POSITIVE_Y',
-    negY = 'TEXTURE_CUBE_MAP_NEGATIVE_Y',
-    posZ = 'TEXTURE_CUBE_MAP_POSITIVE_Z',
-    negZ = 'TEXTURE_CUBE_MAP_NEGATIVE_Z',
-    T2D = 'TEXTURE_2D',
-}
-export const TexData = {
-    null(gl: WebGLRenderingContext, width: number, height: number, target: Texture, data?: ArrayLike<number>) {
-        return TexData.write(gl, width, height, target, data, null);
-    },
-    /**
-     * 写入图像到指定纹理,如果是立方体贴图需要自己生成Mipmap
-     * @param gl 
-     * @param image 图像
-     * @param target 纹理类型
-     * @param tex 指定纹理，未定义时新建
-     */
-    writeImage(gl: WebGLRenderingContext, image: HTMLImageElement, target: Texture, tex?: WebGLTexture | null) {
-        const texture = (tex === undefined) ? gl.createTexture() : tex;
-        const t = target === Texture.T2D ? gl.TEXTURE_2D : gl.TEXTURE_CUBE_MAP;
-        gl.bindTexture(t, texture);
-        gl.texImage2D(gl[target], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-        if (target === Texture.T2D) {
-            gl.generateMipmap(t);
-        }
-        return texture;
-    },
-    /**
-     * 写数据到指定纹理,如果是立方体贴图需要自己生成Mipmap
-     * @param gl 
-     * @param width 
-     * @param height 
-     * @param target 纹理类型
-     * @param data 数据，可为null
-     * @param tex 指定纹理，未定义时新建
-     */
-    write(gl: WebGLRenderingContext, width: number, height: number, target: Texture, data?: ArrayLike<number> | null, tex?: WebGLTexture | null, ) {
-        const texture = (tex === undefined) ? gl.createTexture() : tex;
-        const t = target === Texture.T2D ? gl.TEXTURE_2D : gl.TEXTURE_CUBE_MAP;
-        gl.bindTexture(t, texture);
-        // rgba 4个通道各8位
-        gl.texImage2D(gl[target], 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data ? new Uint8Array(data) : null);
-        if (target === Texture.T2D) {
-            gl.generateMipmap(t);
-        }
-        return texture;
-    },
-};
+
 
 
 export type typeAll = mat3 | mat4 | vec4 | vec3 | vec2 | number;
@@ -182,8 +132,15 @@ export const ShaderMaterialFromKey = <A extends constraintNull, U extends constr
     };
     switch2BindProgram();
     const loc = {} as { [p in keyof A]: number } & { [p in keyof U]: WebGLUniformLocation | null };
-    const res = {} as { program: WebGLProgram; loc: typeof loc; src: A & U, switch2BindProgram: () => void, getUnifLoc: (u: string) => WebGLUniformLocation | null }
-        & unifType<U> & attrType<A>; // 如果定义在一个即将展开的对象上,setget生效
+    const res = {} as {
+        program: WebGLProgram;
+        loc: typeof loc;
+        src: A & U;
+        switch2BindProgram: () => void;
+        getUnifLoc: (u: string) => WebGLUniformLocation | null,
+        setUnif: (u: string, val: typeAll | number[]) => void,
+        getAttrFn: (u: string) => attrResType
+    } & unifType<U> & attrType<A>; // 如果定义在一个即将展开的对象上,setget生效
     Object.keys(attribute).forEach(x => {
         (loc as any)[x] = gl.getAttribLocation(program, x);
         const size = attribute[x];
@@ -235,6 +192,10 @@ export const ShaderMaterialFromKey = <A extends constraintNull, U extends constr
     res.switch2BindProgram = switch2BindProgram;
     res.src = { ...attribute, ...uniform };
     res.getUnifLoc = u => res.loc[u];
+    res.getAttrFn = u => res[u];
+    res.setUnif = (u, v) => {
+        (res as any)[u] = v;
+    };
     return res;
 };
 export type ShaderMaterialT = ReturnType<typeof ShaderMaterialFromKey>;

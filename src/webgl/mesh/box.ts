@@ -1,6 +1,7 @@
 import { Model } from './model';
 import { colorType } from './type';
 import { calcNormal, num2color, PosDataType, r2t } from './util';
+import { CubeTexture } from '../texture';
 
 export type cubeColorType = {
     front: colorType;
@@ -12,14 +13,21 @@ export type cubeColorType = {
 } | number;
 
 export class Box extends Model {
-    public constructor({ x = 100, y = 100, z = 100, color = 'none', reverse = false }: {
-        x?: number; y?: number; z?: number; color?: 'none' | 'rand' | cubeColorType; reverse?: boolean
+    public constructor({ x = 100, y = 100, z = 100, color, reverse = false, texture }: {
+        x?: number; y?: number; z?: number; color?: 'rand' | cubeColorType; reverse?: boolean, texture?: CubeTexture
     } = {}) {
+        if (color && texture) {
+            throw new RangeError('不允许同时定义纹理和颜色');
+        }
+        if (texture instanceof CubeTexture && !(x === y && x === z)) {
+            throw new RangeError('使用立方体纹理时xyz必须相等');
+        }
         const str = JSON.stringify({ x, y, z, reverse });
         const memo = Box.memoPos.get(str);
         if (memo) {
             super(memo.pos, [x, y, z], memo.normal);
         } else {
+
             const e = (x: Array<number>) => r2t(x, reverse);
             const pos = [
                 // front
@@ -53,18 +61,24 @@ export class Box extends Model {
                     0, 0, z,]),
             ];
             const normal = calcNormal(pos);
-            super(pos, [x,y,z], normal);
+            super(pos, [x, y, z], normal);
             Box.memoPos.set(str, { pos, normal });
         }
 
         if (color === 'rand') {
             this.fillRandColor();
-        }
-        if (typeof color === 'object' || typeof color === 'number') {
+        } else if (typeof color === 'object' || typeof color === 'number') {
             this.fillColor(color);
         }
+
+        if (texture) {
+            this.texture = texture;
+        }
+
         this.type = 'Box';
     }
+
+    public readonly texture?: CubeTexture;
 
     static memoPos = new Map<string, { pos: PosDataType, normal: Array<number> }>();
 

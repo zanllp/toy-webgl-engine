@@ -74,7 +74,7 @@ export class ToyEngine<S = any>  {
 	/**
 	 * 渲染函数，在渲染渲染队列前调用，执行矩阵的变换
 	 */
-	public render(): IRenderAble[] | void {
+	public render(t:number): IRenderAble[] | void {
 		throw new Error('Method not implemented.');
 	}
 
@@ -100,12 +100,12 @@ export class ToyEngine<S = any>  {
 	/**
 	 * 渲染一帧
 	 */
-	public renderFrame() {
+	public renderFrame(t:number) {
 		if (this.projectionMat === undefined) {
 			this.setProjection(this.projParams);
 		}
 		this.clear();
-		this.render();
+		this.render(t);
 		this.renderQuene.forEach(x => {
 			x.viewMat = this.viewMat;
 			x.projectionMat = this.projectionMat;
@@ -125,7 +125,7 @@ export class ToyEngine<S = any>  {
 			this.setProjection(this.projParams);
 		}
 		if (this.loop.state === 'run') {
-			this.renderFrame();
+			this.renderFrame(0);
 		}
 	}
 
