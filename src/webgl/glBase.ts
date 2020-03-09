@@ -1,4 +1,5 @@
 import { mat3, mat4, vec2, vec3, vec4 } from 'gl-matrix';
+import { variableEnum } from './shader';
 
 export function resize(canvas: any, dpi = window.devicePixelRatio || 1) {
     // 获取浏览器中画布的显示尺寸
@@ -123,13 +124,13 @@ export const createSetUniformFn = (gl: WebGLRenderingContext, loc: WebGLUniformL
 export type unifType<U> = { [p in keyof U]: U[p] };
 export type attrResType = { set(data: Array<number>, id?: any): void, get(id: any): Array<number> | undefined };
 export type attrType<A> = { [p in keyof A]: attrResType };
-export type allLocType<A,U> = { [p in keyof A]: number } & { [p in keyof U]: WebGLUniformLocation | null };
-export type shaderMaterialResType<A,U> = {
+export type allLocType<A, U> = { [p in keyof A]: number } & { [p in keyof U]: WebGLUniformLocation | null };
+export type shaderMaterialResType<A, U> = {
     program: WebGLProgram;
     /**
      * 已经定义的所有地址，没有类型推断但确定定义过的也可以通过(info.loc as loc)[key]获取
      */
-    loc: allLocType<A,U>;
+    loc: allLocType<A, U>;
     /**
      * 创建材质的原参数
      */
@@ -137,20 +138,29 @@ export type shaderMaterialResType<A,U> = {
     /**
      * 切换到材质绑定的程序
      */
-    switch2BindProgram: () => void;
+    switch2BindProgram(): void;
     /**
      * 获取uniform地址，给不能类型推断的目标使用的
      */
-    getUnifLoc: (u: string) => WebGLUniformLocation | null,
-    /**
-     * 设置某个unifrom的值，给不能类型推断的目标使用的
-     */
-    setUnif: (u: string, val: typeAll | number[]) => void,
+    getUnifLoc(u: variableEnum | keyof U): WebGLUniformLocation | null,
     /**
      * 获取某个attribute值的setget函数，给不能类型推断的目标使用的
      */
-    getAttrFn: (u: string) => attrResType
-} & unifType<U> & attrType<A>; // 如果定义在一个即将展开的对象上,setget生效
+    getAttrFn(u: variableEnum | keyof U): attrResType,
+
+    /**
+     * 设置某个unifrom的值，给不能类型推断的目标使用的
+     */
+    setUnif(u: variableEnum | keyof U, val: typeAll | number[]): void;
+    /**
+     * 专门用来设置数组的
+     * @param u 目标
+     * @param iorf int 或者 float
+     * @param number vec3就是3
+     * @param data 
+     */
+    setUnif(u: variableEnum | keyof U, iorf: 'i' | 'f', number: '1' | '2' | '3' | '4', data: Iterable<number>): void;
+} & unifType<U> & attrType<A> ; // 如果定义在一个即将展开的对象上,setget生效
 
 export const ShaderMaterialFromKey = <A extends constraintNull, U extends constraintAll>({ gl, program, attribute, uniform }:
     { gl: WebGLRenderingContext; program: WebGLProgram; attribute: A; uniform: U; }) => {
@@ -160,8 +170,8 @@ export const ShaderMaterialFromKey = <A extends constraintNull, U extends constr
         }
     };
     switch2BindProgram();
-    const loc = {} as allLocType<A,U>;
-    const res = {} as shaderMaterialResType<A,U>;
+    const loc = {} as allLocType<A, U>;
+    const res = {} as shaderMaterialResType<A, U>;
     Object.keys(attribute).forEach(x => {
         (loc as any)[x] = gl.getAttribLocation(program, x);
         const size = attribute[x];
@@ -214,8 +224,14 @@ export const ShaderMaterialFromKey = <A extends constraintNull, U extends constr
     res.src = { ...attribute, ...uniform };
     res.getUnifLoc = u => res.loc[u];
     res.getAttrFn = u => res[u];
-    res.setUnif = (u, v) => {
-        (res as any)[u] = v;
+    (res as any).setUnif = (k: any, v: any, n: any, data: any) => {
+        if (typeof v === 'string') {
+            const iof = v as 'i' | 'f';
+            const num = n as '1' | '2' | '3' | '4';
+            (gl as any)[`uniform${num}${iof}v`](res.getUnifLoc(k), data);
+        } else {
+            (res as any)[k] = v;
+        }
     };
     return res;
 };

@@ -327,7 +327,7 @@ const createModel = (gl: WebGLRenderingContext) => {
     asm.setModelMat(x => mat4.translate(x, x, [1500, 0, 500]));
     const scene = new Scene(gl, box0, sphere, asm);
     const light = new DirectionalLight();
-    scene.light.push(light);
+    scene.light.push(light, new DirectionalLight([1, 0, 0]));
     return { scene, box0, sphere, asm, light };
 };
 

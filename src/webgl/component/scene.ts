@@ -5,7 +5,6 @@ import { Box } from '../mesh';
 import { Model } from '../mesh/model';
 import { modelMat2WorldMat } from '../mesh/util';
 import { baseMaterialType, getMaterial, ShaderOption } from '../shader/index';
-import { CubeTexture } from '../texture';
 import { IRenderAble } from '../toyEngine';
 
 export class Scene implements IRenderAble {
@@ -42,7 +41,8 @@ export class Scene implements IRenderAble {
      * @param material 
      */
     private setModelLight(material: baseMaterialType) {
-        this.light.forEach(x => x.setLightParams(material, this.gl));
+        const directLight = this.light.filter(x => x instanceof DirectionalLight);
+        DirectionalLight.setLightParams(material, directLight as DirectionalLight[]);
     }
 
     /**
@@ -51,10 +51,10 @@ export class Scene implements IRenderAble {
     private createMatrial(target: Model) {
         const { gl } = this;
         const op = new ShaderOption();
-        for (const li of this.light) {
-            if (li instanceof DirectionalLight) {
-                op.set(ShaderOption.DIRECTION_LIGHT);
-            }
+        const directLight = this.light.filter(x => x instanceof DirectionalLight);
+        if (directLight.length !== 0) {
+            op.set(ShaderOption.DIRECTION_LIGHT);
+            op.define.set('NUM_DIRECTIONAL_LIGHT', directLight.length);
         }
         if (target instanceof Box && target.texture) {
             if (!target.texture.loadSuccess()) {
@@ -96,7 +96,7 @@ export class Scene implements IRenderAble {
         info.u_world = modelMat2WorldMat(nextModelMat);
         const { size } = model;
         if (model.hasTex && size) { // 有纹理不需要颜色
-            info.setUnif(CubeTexture.varNameSize, size);
+            info.setUnif('u_CubeSize', size);
         } else {
             info.a_color?.set(x.color, x);
         }
