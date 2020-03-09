@@ -2,8 +2,11 @@ import { mat4, vec3 } from 'gl-matrix';
 import { createShaderMaterial } from '../glBase';
 import { ShaderOption } from './shaderOption';
 import { ShaderSource, dataArrayType } from './shaderSource';
+
 export type baseMaterialType = ReturnType<typeof createMaterial>;
+
 const materialStore = new Map<ShaderOption, baseMaterialType>();
+
 export const getMaterial = (gl: WebGLRenderingContext, option = new ShaderOption()) => {
     let shader = Array.from(materialStore).find(x => x[0].equal(option))?.[1];
     if (shader === undefined) {

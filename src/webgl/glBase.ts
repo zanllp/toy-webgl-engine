@@ -28,7 +28,7 @@ export function createShader({ gl, type, source }: { gl: WebGLRenderingContext; 
         const msg = gl.getShaderInfoLog(shader);
         console.error(msg);
         gl.deleteShader(shader);
-        throw new Error(`'createShader !success' ${msg}`);
+        throw new Error(`'createShader !success' ${msg}\n${source}`);
     }
     return shader;
 }

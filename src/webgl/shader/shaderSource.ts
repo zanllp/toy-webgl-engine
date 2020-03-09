@@ -21,7 +21,7 @@ export const _ = (varName: variableEnum | includeName | defineEnum) => varName;
 
 export const dataArrayType = (t: dataType, num: number | defineEnum) => ({ type: t, num });
 export type varType = 'attribute' | 'uniform' | 'varying';
-export type dataType = 'mat3' | 'mat4' | 'vec3' | 'samplerCube' | 'sampler2d' | { type: dataType, num: number | defineEnum };
+export type dataType = 'mat3' | 'mat4' | 'vec3' | 'samplerCube' | 'sampler2d' | 'vec4' | { type: dataType, num: number | defineEnum };
 export type shaderType = 'all' | 'vertex' | 'fragment';
 
 
@@ -42,12 +42,13 @@ export type includeName =
     typeof FragmentDeclare |
     typeof DirectionalLightI |
     typeof LightI;
+type fnt = {
+    defined: ((name: defineEnum) => boolean);
+    include: ((name: includeName) => string);
+};
+export type includeValueType = ((fnt: fnt) => string) | string;
 
 export class ShaderSource {
-    public constructor() {
-        this.addVariable('all', 'varying', 'vec3', 'v_color');
-        this.addVariable('vertex', 'attribute', 'vec3', 'a_color');
-    }
 
     public get variableArray() {
         return Array.from(this.variable);
@@ -56,39 +57,36 @@ export class ShaderSource {
     public get defineArray() {
         return Array.from(this.define);
     }
+    public constructor() {
+        this.switchStatic2Current();
+        this.addVariable('all', 'varying', 'vec4', 'v_color');
+        this.addVariable('vertex', 'attribute', 'vec4', 'a_color');
+    }
 
     public define = new Map<defineEnum, { def: string, value?: number }>();
 
     public variable = new Map<variableEnum, variableType>();
 
-    public static includeStore = new Map<includeName, string>();
+    public static define: Map<defineEnum, { def: string, value?: number }>;
+
+    public static variable: Map<variableEnum, variableType>;
+
+    public static includeStore = new Map<includeName, includeValueType>();
+
+    public switchStatic2Current() {
+        ShaderSource.define = this.define;
+        ShaderSource.variable = this.variable;
+    }
 
     public output() {
+        this.switchStatic2Current();
         this.addRuntimeDeclare();
-        const vertex = this.importIncludedScript(vertexSource);
-        const fragment = this.importIncludedScript(fragmentSource);
+        const vertex = vertexSource(this);
+        const fragment = fragmentSource(this); // this.importIncludedScript(this);
         return {
             vertex,
             fragment
         };
-    }
-
-    public importIncludedScript(src: string) {
-        const reg = /^\s*#include<\s*(.*)\s*>\s*$/gm;
-        let res = reg.exec(src);
-        while (res !== null) {
-            const includeName = res[1] as includeName;
-            let include = ShaderSource.includeStore.get(includeName);
-            if (include === undefined) {
-                throw new RangeError(`找不到导入代码：${res[0]}`);
-            }
-            if (/^\s*#include<\s*(.*)\s*>\s*$/gm.test(include)) {
-                include = this.importIncludedScript(include);
-            }
-            src = src.replace(res[0], include);
-            res = reg.exec(src);
-        }
-        return src;
     }
 
     public addRuntimeDeclare() {
@@ -142,10 +140,23 @@ export class ShaderSource {
 
 }
 
-const addInclude = (name: includeName, src: string) => ShaderSource.includeStore.set(name, src);
-
-const vertexSource = `
-#include<${_('VertexDeclare')}>
+const addInclude = (name: includeName, src: includeValueType) => {
+    ShaderSource.includeStore.set(name, src);
+};
+const vertexSource = (shader: ShaderSource) => {
+    const defined = (name: defineEnum) => shader.define.has(name);
+    const include = (name: includeName) => {
+        let res = ShaderSource.includeStore.get(name);
+        if (res === undefined) {
+            throw new RangeError(`找不到导入文件:${name}`);
+        }
+        if (typeof res === 'function') { // 惰性求值
+            res = res({ defined, include });
+        }
+        return res;
+    };
+    return `
+${include('VertexDeclare')}
 
 uniform mat4 u_proj;
 uniform mat4 u_view;
@@ -159,54 +170,46 @@ varying vec3 v_normal;
 void main() {
     vec4 worldPos = u_model * vec4(a_pos,1); 
     gl_Position =   u_proj * u_view * worldPos;
-#ifdef TEX_CUBE
-    ${_('v_cubeUv')} = a_pos/${_('u_CubeSize')};
-#else
-    v_color = a_color;
-#endif
+    ${defined('TEX_CUBE') ? `${_('v_cubeUv')} = a_pos/${_('u_CubeSize')};` : `v_color = a_color;`}
     v_normal = mat3(u_world) * a_normal;
 }`;
+};
 
-
-const fragmentSource = `
+const fragmentSource = (shader: ShaderSource) => {
+    const defined = (name: defineEnum) => shader.define.has(name);
+    const include = (name: includeName) => ShaderSource.includeStore.get(name) as string;
+    return (`
 precision mediump float; // 默认精度
 
-#include<${_('FragmentDeclare')}>
+${include('FragmentDeclare')}
 
 varying vec3 v_normal;
 
-#include<${_('LIGHT')}>
+${defined('LIGHT') && include('LIGHT')}
 
 
 void main() {
     vec3 normal = normalize(v_normal);
-#ifdef TEX_CUBE
-    gl_FragColor = textureCube(${_('u_texture')},  ${_('v_cubeUv')}-.5);
-#elif defined(TEX_2D)
-#error undefined TEX_2D
-#else
-    gl_FragColor = vec4(v_color, 1);
-#endif
-#include<${_('DIRECTIONAL_LIGHT')}>
-
+    ${defined('TEX_CUBE') ? `gl_FragColor = textureCube(${_('u_texture')},${_('v_cubeUv')}-.5);` :
+            defined('TEX_2D') ? '#error undefined TEX_2D' :
+                'gl_FragColor = v_color;'}
+    ${defined('DIRECTIONAL_LIGHT') && include('DIRECTIONAL_LIGHT')}
 }
-`;
+`);
+};
 
-addInclude('DIRECTIONAL_LIGHT', `
-#ifdef ${_('DIRECTIONAL_LIGHT')} 
-    float allLight = .0;
-    for(int i = 0; i < ${_('NUM_DIRECTIONAL_LIGHT')}; i++) {
-        float light = lightFactor(normal, ${_('u_lightDirectional')}[i]);
+addInclude('DIRECTIONAL_LIGHT', ({ include, defined }) => `
+    float allLight = 0.0;
+    for (int i = 0; i < ${ _('NUM_DIRECTIONAL_LIGHT')}; i++) {
+        float light = lightFactor(normal, ${ _('u_lightDirectional')}[i]);
         allLight += light;
     }
-    gl_FragColor.rgb *= allLight;
-#endif`
+    gl_FragColor.rgb *= allLight; `
 );
 
-addInclude('LIGHT', `
-#ifdef ${_('LIGHT')}
-    float lightFactor(vec3 normal,vec3 light) {
-        return max(dot(normal,light),.0);
-    }
-#endif
-`);
+addInclude('LIGHT',
+    `float lightFactor(vec3 normal, vec3 light) {
+        return max(dot(normal, light), .0);
+    }`
+);
+

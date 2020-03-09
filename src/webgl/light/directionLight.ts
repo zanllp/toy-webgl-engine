@@ -4,7 +4,7 @@ import { light } from './light';
 import { array2Vec3 } from '../mesh';
 
 export class DirectionalLight extends light {
-    constructor(directional?: vec3|Array<number>) {
+    constructor(directional?: vec3 | Array<number>) {
         super();
         if (directional instanceof Array) {
             this.directional = array2Vec3(directional);
@@ -21,9 +21,7 @@ export class DirectionalLight extends light {
 
     public static setLightParams(material: baseMaterialType, target: DirectionalLight[]) {
         const directional = new Array<number>();
-        target.forEach(x => {
-            directional.push(...Array.from(x.directional));
-        });
+        target.forEach(x => directional.push(...Array.from(x.directional)));
         material.setUnif('u_lightDirectional', 'f', '3', directional);
     }
 }
