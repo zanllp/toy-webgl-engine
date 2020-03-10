@@ -144,8 +144,7 @@ export class App extends ToyEngine<typeof initState> {
         const { box0, sphere } = this.model;
         const { material } = box0;
         if (material) {
-            material.switch2BindProgram();
-            this.gl.uniform1i(material.getUnifLoc('u_texture'), 0);
+            material.setUnif('u_texture', 0, 'i');
         }
         const lightMat = mat4.create();
         mat4.fromYRotation(lightMat, degToRad(t / 16));

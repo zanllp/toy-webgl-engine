@@ -90,22 +90,23 @@ export const BufferData = {
 export type typeAll = mat3 | mat4 | vec4 | vec3 | vec2 | number;
 export type constraintNull = { [x: string]: number };
 export type constraintAll = { [x: string]: typeAll | null };
-export const createSetUniformFn = (gl: WebGLRenderingContext, loc: WebGLUniformLocation | null) => {
+export const createSetUniformFn = (gl: WebGLRenderingContext, loc: WebGLUniformLocation | null, iorf: 'i' | 'f' = 'f') => {
     return (_: typeAll, trans = false) => {
+        const f = iorf === 'f';
         if (typeof _ === 'number') {
-            gl.uniform1f(loc, _);
+            gl[f ? 'uniform1f' : 'uniform1i'](loc, _);
         } else {
             // 没有mat2因为不能和vec4区分
             // 不使用instanceof是因为mat,vec的类型有类，但实际是模块而是构造器
             switch (_.length) {
                 case 2:
-                    gl.uniform2f(loc, _[0], _[1]);
+                    gl[f ? 'uniform2f' : 'uniform2i'](loc, _[0], _[1]);
                     break;
                 case 3:
-                    gl.uniform3f(loc, _[0], _[1], _[2]);
+                    gl[f ? 'uniform3f' : 'uniform3i'](loc, _[0], _[1], _[2]);
                     break;
                 case 4:
-                    gl.uniform4f(loc, _[0], _[1], _[2], _[3]);
+                    gl[f ? 'uniform4f' : 'uniform4i'](loc, _[0], _[1], _[2], _[3]);
                     break;
                 case 9:
                     gl.uniformMatrix3fv(loc, trans, _);
@@ -140,18 +141,14 @@ export type shaderMaterialResType<A, U> = {
      */
     switch2BindProgram(): void;
     /**
-     * 获取uniform地址，给不能类型推断的目标使用的
-     */
-    getUnifLoc(u: variableEnum | keyof U): WebGLUniformLocation | null,
-    /**
      * 获取某个attribute值的setget函数，给不能类型推断的目标使用的
      */
     getAttrFn(u: variableEnum | keyof U): attrResType,
 
     /**
-     * 设置某个unifrom的值，给不能类型推断的目标使用的
+     * 设置某个unifrom的值，给不能类型推断的目标使用的,依赖数组数量来区分重载，所以不要用于mat2类型，默认float
      */
-    setUnif(u: variableEnum | keyof U, val: typeAll | number[]): void;
+    setUnif(u: variableEnum | keyof U, val: typeAll | number[], iorf?: 'i' | 'f'): void;
     /**
      * 专门用来设置数组的
      * @param u 目标
@@ -160,7 +157,7 @@ export type shaderMaterialResType<A, U> = {
      * @param data 
      */
     setUnif(u: variableEnum | keyof U, iorf: 'i' | 'f', number: '1' | '2' | '3' | '4', data: Iterable<number>): void;
-} & unifType<U> & attrType<A> ; // 如果定义在一个即将展开的对象上,setget生效
+} & unifType<U> & attrType<A>; // 如果定义在一个即将展开的对象上,setget生效
 
 export const ShaderMaterialFromKey = <A extends constraintNull, U extends constraintAll>({ gl, program, attribute, uniform }:
     { gl: WebGLRenderingContext; program: WebGLProgram; attribute: A; uniform: U; }) => {
@@ -222,13 +219,13 @@ export const ShaderMaterialFromKey = <A extends constraintNull, U extends constr
     res.loc = loc;
     res.switch2BindProgram = switch2BindProgram;
     res.src = { ...attribute, ...uniform };
-    res.getUnifLoc = u => res.loc[u];
     res.getAttrFn = u => res[u];
     (res as any).setUnif = (k: any, v: any, n: any, data: any) => {
+        switch2BindProgram();
         if (typeof v === 'string') {
             const iof = v as 'i' | 'f';
             const num = n as '1' | '2' | '3' | '4';
-            (gl as any)[`uniform${num}${iof}v`](res.getUnifLoc(k), data);
+            (gl as any)[`uniform${num}${iof}v`](res.loc[k], data);
         } else {
             (res as any)[k] = v;
         }
