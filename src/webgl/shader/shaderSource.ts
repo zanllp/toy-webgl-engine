@@ -58,7 +58,6 @@ export class ShaderSource {
         return Array.from(this.define);
     }
     public constructor() {
-        this.switchStatic2Current();
         this.addVariable('all', 'varying', 'vec4', 'v_color');
         this.addVariable('vertex', 'attribute', 'vec4', 'a_color');
     }
@@ -67,19 +66,10 @@ export class ShaderSource {
 
     public variable = new Map<variableEnum, variableType>();
 
-    public static define: Map<defineEnum, { def: string, value?: number }>;
-
-    public static variable: Map<variableEnum, variableType>;
-
     public static includeStore = new Map<includeName, includeValueType>();
 
-    public switchStatic2Current() {
-        ShaderSource.define = this.define;
-        ShaderSource.variable = this.variable;
-    }
 
     public output() {
-        this.switchStatic2Current();
         this.addRuntimeDeclare();
         const vertex = vertexSource(this);
         const fragment = fragmentSource(this); // this.importIncludedScript(this);
@@ -143,18 +133,30 @@ export class ShaderSource {
 const addInclude = (name: includeName, src: includeValueType) => {
     ShaderSource.includeStore.set(name, src);
 };
-const vertexSource = (shader: ShaderSource) => {
+const createIncludeFn = (shader: ShaderSource) => {
     const defined = (name: defineEnum) => shader.define.has(name);
+    const includeStack = new Array<string>();
     const include = (name: includeName) => {
+        if (includeStack.length > 8) {
+            let msg = '包含过深，检查是否存在相互包含\n';
+            [...includeStack].reverse().forEach(x=>msg+=`   在 ${x}\n`);
+            throw new Error(msg);
+        }
         let res = ShaderSource.includeStore.get(name);
         if (res === undefined) {
             throw new RangeError(`找不到导入文件:${name}`);
         }
         if (typeof res === 'function') { // 惰性求值
+            includeStack.push(name);
             res = res({ defined, include });
+            includeStack.pop();
         }
         return res;
     };
+    return { defined, include };
+};
+const vertexSource = (shader: ShaderSource) => {
+    const { defined, include } = createIncludeFn(shader);
     return `
 ${include('VertexDeclare')}
 
@@ -176,8 +178,7 @@ void main() {
 };
 
 const fragmentSource = (shader: ShaderSource) => {
-    const defined = (name: defineEnum) => shader.define.has(name);
-    const include = (name: includeName) => ShaderSource.includeStore.get(name) as string;
+    const { defined, include } = createIncludeFn(shader);
     return (`
 precision mediump float; // 默认精度
 
@@ -207,8 +208,8 @@ addInclude('DIRECTIONAL_LIGHT', ({ include, defined }) => `
     gl_FragColor.rgb *= allLight; `
 );
 
-addInclude('LIGHT',
-    `float lightFactor(vec3 normal, vec3 light) {
+addInclude('LIGHT',({ include, defined }) => `
+    float lightFactor(vec3 normal, vec3 light) {
         return max(dot(normal, light), .0);
     }`
 );
