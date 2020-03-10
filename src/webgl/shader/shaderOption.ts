@@ -17,6 +17,7 @@ export class ShaderOption {
     public static readonly SPOT_LIGHT = _o(1);
     public static readonly SMAPLER_2D = _o(2);
     public static readonly SMAPLER_CUBE = _o(3);
+    public static readonly CUBE = _o(4);
     /**
      * 设置选项啊
      * @param op 

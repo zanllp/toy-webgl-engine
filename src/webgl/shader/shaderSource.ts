@@ -2,6 +2,7 @@ import { DirectionalLight } from '../light/directionLight';
 import { CubeTexture } from '../texture';
 
 export type defineEnum =
+    'CUBE' |
     'LIGHT' |
     'DIRECTIONAL_LIGHT' |
     'TEX_CUBE' |
@@ -14,15 +15,19 @@ export type variableEnum =
     typeof CubeTexture.varNameUv |
     'u_texture' |
     'a_color' |
-    'v_color';
+    'v_color' |
+    'v_texIndex' |
+    'a_texIndex' |
+    'u_texture2D';
 
 export const _ = (varName: variableEnum | includeName | defineEnum) => varName;
 
 
 export const dataArrayType = (t: dataType, num: number | defineEnum) => ({ type: t, num });
 export type varType = 'attribute' | 'uniform' | 'varying';
-export type dataType = 'mat3' | 'mat4' | 'vec3' | 'samplerCube' | 'sampler2d' | 'vec4' | { type: dataType, num: number | defineEnum };
+export type dataType = 'float' | 'vec3' | 'vec4' | 'mat3' | 'mat4' | 'samplerCube' | 'sampler2d' | { type: dataType, num: number | defineEnum };
 export type shaderType = 'all' | 'vertex' | 'fragment';
+
 
 
 export type variableType = {
@@ -36,12 +41,14 @@ const VertexDeclare = 'VertexDeclare';
 const FragmentDeclare = 'FragmentDeclare';
 const DirectionalLightI = 'DIRECTIONAL_LIGHT';
 const LightI = 'LIGHT';
+const CubeColorTexMixI = 'CUBE_COLOR_TEX_MIX';
 
 export type includeName =
     typeof VertexDeclare |
     typeof FragmentDeclare |
     typeof DirectionalLightI |
-    typeof LightI;
+    typeof LightI |
+    typeof CubeColorTexMixI;
 type fnt = {
     defined: ((name: defineEnum) => boolean);
     include: ((name: includeName) => string);
@@ -72,14 +79,33 @@ export class ShaderSource {
     public output() {
         this.addRuntimeDeclare();
         const vertex = vertexSource(this);
-        const fragment = fragmentSource(this); // this.importIncludedScript(this);
+        const fragment = fragmentSource(this);
         return {
             vertex,
             fragment
         };
     }
 
-    public addRuntimeDeclare() {
+    public addDefine(def: defineEnum, value?: number) {
+        this.define.set(def, { def, value });
+    }
+
+    public addVariable(target: shaderType, varType: varType, dataType: dataType, name: variableEnum) {
+        this.variable.set(name, { name, dataType, varType, target });
+    }
+
+
+    public removeVariable(...name: variableEnum[]) {
+        const willDel = new Set<variableType>();
+        this.variable.forEach(x => {
+            if (name.includes(x.name)) {
+                willDel.add(x);
+            }
+        });
+        willDel.forEach(x => this.variable.delete(x.name));
+    }
+
+    private addRuntimeDeclare() {
         let vertex = '';
         let fragment = '';
         this.define.forEach(x => {
@@ -109,37 +135,25 @@ export class ShaderSource {
         ShaderSource.includeStore.set('FragmentDeclare', fragment);
     }
 
-    public addDefine(def: defineEnum, value?: number) {
-        this.define.set(def, { def, value });
-    }
-
-    public addVariable(target: shaderType, varType: varType, dataType: dataType, name: variableEnum) {
-        this.variable.set(name, { name, dataType, varType, target });
-    }
-
-
-    public removeVariable(...name: variableEnum[]) {
-        const willDel = new Set<variableType>();
-        this.variable.forEach(x => {
-            if (name.includes(x.name)) {
-                willDel.add(x);
-            }
-        });
-        willDel.forEach(x => this.variable.delete(x.name));
-    }
-
 }
 
 const addInclude = (name: includeName, src: includeValueType) => {
     ShaderSource.includeStore.set(name, src);
 };
 const createIncludeFn = (shader: ShaderSource) => {
-    const defined = (name: defineEnum) => shader.define.has(name);
+    const defined = (...name: defineEnum[]) => {
+        for (const iterator of name) {
+            if (!shader.define.has(iterator)) {
+                return false;
+            }
+        }
+        return true;
+    };
     const includeStack = new Array<string>();
     const include = (name: includeName) => {
         if (includeStack.length > 8) {
             let msg = '包含过深，检查是否存在相互包含\n';
-            [...includeStack].reverse().forEach(x=>msg+=`   在 ${x}\n`);
+            [...includeStack].reverse().forEach(x => msg += `   在 ${x}\n`);
             throw new Error(msg);
         }
         let res = ShaderSource.includeStore.get(name);
@@ -174,6 +188,7 @@ void main() {
     gl_Position =   u_proj * u_view * worldPos;
     ${defined('TEX_CUBE') ? `${_('v_cubeUv')} = a_pos/${_('u_CubeSize')};` : `v_color = a_color;`}
     v_normal = mat3(u_world) * a_normal;
+    ${(defined('CUBE', 'TEX_2D')) ? 'v_isTex=a_isTex;' : ''}
 }`;
 };
 
@@ -186,15 +201,15 @@ ${include('FragmentDeclare')}
 
 varying vec3 v_normal;
 
-${defined('LIGHT') && include('LIGHT')}
+${defined('LIGHT') ? include('LIGHT') : ''}
 
 
 void main() {
     vec3 normal = normalize(v_normal);
     ${defined('TEX_CUBE') ? `gl_FragColor = textureCube(${_('u_texture')},${_('v_cubeUv')}-.5);` :
-            defined('TEX_2D') ? '#error undefined TEX_2D' :
+            defined('TEX_2D', 'CUBE') ? include('CUBE_COLOR_TEX_MIX') :
                 'gl_FragColor = v_color;'}
-    ${defined('DIRECTIONAL_LIGHT') && include('DIRECTIONAL_LIGHT')}
+    ${defined('DIRECTIONAL_LIGHT') ? include('DIRECTIONAL_LIGHT') : ''}
 }
 `);
 };
@@ -208,9 +223,15 @@ addInclude('DIRECTIONAL_LIGHT', ({ include, defined }) => `
     gl_FragColor.rgb *= allLight; `
 );
 
-addInclude('LIGHT',({ include, defined }) => `
+addInclude('LIGHT', ({ include, defined }) => `
     float lightFactor(vec3 normal, vec3 light) {
         return max(dot(normal, light), .0);
     }`
 );
 
+
+// 立方体贴图颜色混合传输vec3的
+addInclude('CUBE_COLOR_TEX_MIX', ({ include, defined }) => `
+
+`
+);

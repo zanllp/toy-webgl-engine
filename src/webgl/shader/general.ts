@@ -1,7 +1,7 @@
 import { mat4, vec3 } from 'gl-matrix';
 import { createShaderMaterial } from '../glBase';
 import { ShaderOption } from './shaderOption';
-import { ShaderSource, dataArrayType } from './shaderSource';
+import { ShaderSource, dataArrayType, variableEnum } from './shaderSource';
 
 export type baseMaterialType = ReturnType<typeof createMaterial>;
 
@@ -11,6 +11,15 @@ export const getMaterial = (gl: WebGLRenderingContext, option = new ShaderOption
     let shader = Array.from(materialStore).find(x => x[0].equal(option))?.[1];
     if (shader === undefined) {
         const source = new ShaderSource();
+        if (option.has(ShaderOption.CUBE)) {
+            source.addDefine('CUBE');
+            if (option.has(ShaderOption.SMAPLER_2D)) {
+                source.addDefine('TEX_2D');
+                source.addVariable('all', 'varying', 'float', 'v_texIndex');
+                source.addVariable('vertex', 'attribute', 'float', 'a_texIndex');
+                source.addVariable('fragment', 'uniform', 'sampler2d', 'u_texture2D');
+            }
+        }
         if (option.has(ShaderOption.DIRECTION_LIGHT)) {
             source.addDefine('LIGHT');
             source.addDefine('DIRECTIONAL_LIGHT');
@@ -18,7 +27,7 @@ export const getMaterial = (gl: WebGLRenderingContext, option = new ShaderOption
             source.addDefine('NUM_DIRECTIONAL_LIGHT', option.define.get('NUM_DIRECTIONAL_LIGHT'));
         }
         if (option.has(ShaderOption.SMAPLER_CUBE)) {
-            source.removeVariable('v_color', 'a_color'); // 默认添加颜色,有纹理时不需要这些
+            source.removeVariable('v_color', 'a_color'); // 默认添加颜色,有立方体纹理时不需要这些
             source.addDefine('TEX_CUBE');
             source.addVariable('fragment', 'uniform', 'samplerCube', 'u_texture');
             source.addVariable('all', 'varying', 'vec3', 'v_cubeUv');
@@ -30,7 +39,13 @@ export const getMaterial = (gl: WebGLRenderingContext, option = new ShaderOption
     return shader;
 };
 
-
+/**
+ * 定义运行时增加attribute变量的每次读取数量
+ */
+const attrReadCount: Partial<{ [p in variableEnum]: number }> = {
+    a_color: 3,
+    a_texIndex: 1
+};
 
 export const createMaterial = (gl: WebGLRenderingContext, source: ShaderSource) => {
     const src = source.output();
@@ -42,7 +57,7 @@ export const createMaterial = (gl: WebGLRenderingContext, source: ShaderSource) 
         (unif as any)[x[0]] = null; // 混入增加的uniform，以便可以在材质的loc里获取地址
     });
     vari.filter(x => x[1].varType === 'attribute').forEach(x => {
-        (attr as any)[x[0]] = 3; // 一次读取3个
+        (attr as any)[x[0]] = attrReadCount[x[0]];
     });
     return createShaderMaterial({
         gl,
