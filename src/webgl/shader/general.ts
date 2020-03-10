@@ -1,26 +1,31 @@
 import { mat4, vec3 } from 'gl-matrix';
 import { createShaderMaterial } from '../glBase';
 import { ShaderOption } from './shaderOption';
-import { ShaderSource } from './shaderSource';
+import { ShaderSource, dataArrayType } from './shaderSource';
+
 export type baseMaterialType = ReturnType<typeof createMaterial>;
-const materialStore = new Map<number, baseMaterialType>();
+
+const materialStore = new Map<ShaderOption, baseMaterialType>();
+
 export const getMaterial = (gl: WebGLRenderingContext, option = new ShaderOption()) => {
-    let shader = materialStore.get(option.value);
+    let shader = Array.from(materialStore).find(x => x[0].equal(option))?.[1];
     if (shader === undefined) {
         const source = new ShaderSource();
         if (option.has(ShaderOption.DIRECTION_LIGHT)) {
             source.addDefine('LIGHT');
             source.addDefine('DIRECTIONAL_LIGHT');
-            source.addVariable('fragment', 'uniform', 'vec3', 'u_lightDirectional');
+            source.addVariable('fragment', 'uniform', dataArrayType('vec3', 'NUM_DIRECTIONAL_LIGHT'), 'u_lightDirectional');
+            source.addDefine('NUM_DIRECTIONAL_LIGHT', option.define.get('NUM_DIRECTIONAL_LIGHT'));
         }
         if (option.has(ShaderOption.SMAPLER_CUBE)) {
+            source.removeVariable('v_color', 'a_color'); // 默认添加颜色,有纹理时不需要这些
             source.addDefine('TEX_CUBE');
             source.addVariable('fragment', 'uniform', 'samplerCube', 'u_texture');
-            source.addVariable('all','varying','vec3','v_cubeUv');
-            source.addVariable('vertex','uniform','vec3','u_CubeSize');
+            source.addVariable('all', 'varying', 'vec3', 'v_cubeUv');
+            source.addVariable('vertex', 'uniform', 'vec3', 'u_CubeSize');
         }
         shader = createMaterial(gl, source);
-        materialStore.set(option.value, shader);
+        materialStore.set(option, shader);
     }
     return shader;
 };
@@ -33,11 +38,11 @@ export const createMaterial = (gl: WebGLRenderingContext, source: ShaderSource) 
     const unif = {};
     const attr = {};
     console.info(src.vertex, src.fragment);
-    vari.filter(x => x.varType === 'uniform').forEach(x => {
-        (unif as any)[x.name] = null; // 混入增加的uniform，以便可以在材质的loc里获取地址
+    vari.filter((x) => x[1].varType === 'uniform').forEach(x => {
+        (unif as any)[x[0]] = null; // 混入增加的uniform，以便可以在材质的loc里获取地址
     });
-    vari.filter(x => x.varType === 'attribute').forEach(x => {
-        (attr as any)[x.name] = 3; // 一次读取3个
+    vari.filter(x => x[1].varType === 'attribute').forEach(x => {
+        (attr as any)[x[0]] = 3; // 一次读取3个
     });
     return createShaderMaterial({
         gl,

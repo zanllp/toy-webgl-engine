@@ -1,14 +1,22 @@
 import { modifyWindow } from '../tool';
+import { defineEnum } from './shaderSource';
 
 const _o = (bit: number) => 1 << bit;
 
 export class ShaderOption {
-    public value = 0;
-    public static DIRECTION_LIGHT = _o(0);
-    public static SPOT_LIGHT = _o(1);
-    public static SMAPLER_2D = _o(2);
-    public static SMAPLER_CUBE = _o(3);
 
+    /**
+     * 转换到二进制字符串
+     */
+    public get t2str() {
+        return this.value.toString(2);
+    }
+    public value = 0;
+    public readonly define = new Map<defineEnum, number | undefined>();
+    public static readonly DIRECTION_LIGHT = _o(0);
+    public static readonly SPOT_LIGHT = _o(1);
+    public static readonly SMAPLER_2D = _o(2);
+    public static readonly SMAPLER_CUBE = _o(3);
     /**
      * 设置选项啊
      * @param op 
@@ -28,15 +36,16 @@ export class ShaderOption {
         return (i & target) === target;
     }
 
-    /**
-     * 转换到二进制字符串
-     */
-    public get t2str() {
-        return this.value.toString(2);
-    }
-
     public equal(t: ShaderOption) {
-        return this.value === t.value;
+        if (!(this.value === t.value && this.define.size === t.define.size)) {
+            return false;
+        }
+        this.define.forEach((v, k) => {
+            if (v !== t.define.get(k)) {
+                return false;
+            }
+        });
+        return true;
     }
 }
 
