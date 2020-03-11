@@ -49,10 +49,7 @@ export type includeName =
     typeof DirectionalLightI |
     typeof LightI |
     typeof CubeColorTexMixI;
-type fnt = {
-    defined: ((name: defineEnum) => boolean);
-    include: ((name: includeName) => string);
-};
+type fnt = ReturnType<typeof createIncludeFn>;
 export type includeValueType = ((fnt: fnt) => string) | string;
 
 export class ShaderSource {
@@ -140,7 +137,7 @@ export class ShaderSource {
 const addInclude = (name: includeName, src: includeValueType) => {
     ShaderSource.includeStore.set(name, src);
 };
-const createIncludeFn = (shader: ShaderSource) => {
+const createIncludeFn = (shader: ShaderSource, state = true) => {
     const defined = (...name: defineEnum[]) => {
         for (const iterator of name) {
             if (!shader.define.has(iterator)) {
@@ -151,6 +148,9 @@ const createIncludeFn = (shader: ShaderSource) => {
     };
     const includeStack = new Array<string>();
     const include = (name: includeName) => {
+        if (!state) {
+            return '';
+        }
         if (includeStack.length > 8) {
             let msg = '包含过深，检查是否存在相互包含\n';
             [...includeStack].reverse().forEach(x => msg += `   在 ${x}\n`);
@@ -162,15 +162,20 @@ const createIncludeFn = (shader: ShaderSource) => {
         }
         if (typeof res === 'function') { // 惰性求值
             includeStack.push(name);
-            res = res({ defined, include });
+            res = res(fn);
             includeStack.pop();
         }
         return res;
     };
-    return { defined, include };
+    const R = (src: string) => state ? src : '';
+    const If = (condition: boolean) => {
+        return createIncludeFn(shader, condition);
+    };
+    const fn = { defined, include, If, R };
+    return fn;
 };
 const vertexSource = (shader: ShaderSource) => {
-    const { defined, include } = createIncludeFn(shader);
+    const { defined, include, If } = createIncludeFn(shader);
     return `
 ${include('VertexDeclare')}
 
@@ -188,12 +193,12 @@ void main() {
     gl_Position =   u_proj * u_view * worldPos;
     ${defined('TEX_CUBE') ? `${_('v_cubeUv')} = a_pos/${_('u_CubeSize')};` : `v_color = a_color;`}
     v_normal = mat3(u_world) * a_normal;
-    ${(defined('CUBE', 'TEX_2D')) ? 'v_isTex=a_isTex;' : ''}
+    ${If(defined('CUBE', 'TEX_2D')).R('v_isTex=a_isTex;')}
 }`;
 };
 
 const fragmentSource = (shader: ShaderSource) => {
-    const { defined, include } = createIncludeFn(shader);
+    const { defined, include, If } = createIncludeFn(shader);
     return (`
 precision mediump float; // 默认精度
 
@@ -201,7 +206,7 @@ ${include('FragmentDeclare')}
 
 varying vec3 v_normal;
 
-${defined('LIGHT') ? include('LIGHT') : ''}
+${If(defined('LIGHT')).include('LIGHT')}
 
 
 void main() {
@@ -209,7 +214,7 @@ void main() {
     ${defined('TEX_CUBE') ? `gl_FragColor = textureCube(${_('u_texture')},${_('v_cubeUv')}-.5);` :
             defined('TEX_2D', 'CUBE') ? include('CUBE_COLOR_TEX_MIX') :
                 'gl_FragColor = v_color;'}
-    ${defined('DIRECTIONAL_LIGHT') ? include('DIRECTIONAL_LIGHT') : ''}
+    ${If(defined('DIRECTIONAL_LIGHT')).include('DIRECTIONAL_LIGHT')}
 }
 `);
 };
