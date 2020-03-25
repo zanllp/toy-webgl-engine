@@ -5,6 +5,7 @@ import { Box } from '../mesh';
 import { Model } from '../mesh/model';
 import { modelMat2WorldMat } from '../mesh/util';
 import { baseMaterialType, getMaterial, ShaderOption } from '../shader/index';
+import { CubeTexture } from '../texture';
 import { IRenderAble } from '../toyEngine';
 
 export class Scene implements IRenderAble {
@@ -56,11 +57,23 @@ export class Scene implements IRenderAble {
             op.set(ShaderOption.DIRECTION_LIGHT);
             op.define.set('NUM_DIRECTIONAL_LIGHT', directLight.length);
         }
-        if (target instanceof Box && target.texture) {
-            if (!target.texture.loadSuccess()) {
-                target.texture.loadTex(gl);
+        if (target instanceof Box) {
+            op.set(ShaderOption.CUBE);
+            if (target.texture) {
+                if (target.texture instanceof CubeTexture) {
+                    op.set(ShaderOption.SMAPLER_CUBE);
+                    if (!target.texture.loadSuccess()) {
+                        target.texture.loadTex(gl);
+                    }
+                } else {
+                    op.set(ShaderOption.SMAPLER_2D);
+                    if (!target.texture.texture.loadSuccess()) {
+                        target.texture.texture.loadTex(gl);
+
+                    }
+                }
             }
-            op.set(ShaderOption.SMAPLER_CUBE);
+
         }
 
         const material = getMaterial(gl, op);
